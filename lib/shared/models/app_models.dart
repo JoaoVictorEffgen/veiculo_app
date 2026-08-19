@@ -46,6 +46,9 @@ class Vehicle {
   final String? stoppedLocation;
 
   Vehicle copyWith({
+    String? name,
+    String? model,
+    String? plate,
     VehicleStatus? status,
     String? currentDriverId,
     String? currentDriverName,
@@ -55,9 +58,9 @@ class Vehicle {
   }) {
     return Vehicle(
       id: id,
-      name: name,
-      model: model,
-      plate: plate,
+      name: name ?? this.name,
+      model: model ?? this.model,
+      plate: plate ?? this.plate,
       status: status ?? this.status,
       currentDriverId: currentDriverId ?? this.currentDriverId,
       currentDriverName: currentDriverName ?? this.currentDriverName,

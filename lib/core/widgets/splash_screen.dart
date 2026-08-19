@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Splash inicial. Na Etapa 2, esta tela passará a checar o estado de
-/// autenticação (Firebase Auth) e redirecionar automaticamente para
-/// /login ou /dashboard.
+/// Splash inicial — o router redireciona automaticamente conforme a sessao salva.
 class SplashScreen extends StatelessWidget {
   const SplashScreen({super.key});
 
@@ -16,7 +14,7 @@ class SplashScreen extends StatelessWidget {
             Icon(Icons.local_shipping_rounded, size: 64),
             SizedBox(height: 16),
             Text(
-              'Controle de Veículos',
+              'Controle de Veiculos',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
             ),
             SizedBox(height: 24),
