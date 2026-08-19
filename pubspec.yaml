@@ -1,0 +1,47 @@
+name: vehicle_control_app
+description: "Aplicativo interno de controle de veículos e motoristas."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Roteamento
+  go_router: ^14.2.0
+
+  # Firebase (backend central: auth + status/histórico dos veículos)
+  firebase_core: ^3.3.0
+  firebase_auth: ^5.1.4
+  cloud_firestore: ^5.2.1
+
+  # Persistência local / fila offline
+  drift: ^2.19.1
+  sqlite3_flutter_libs: ^0.5.24
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # Conectividade
+  connectivity_plus: ^6.0.5
+
+  # Utilitários
+  intl: ^0.19.0
+  equatable: ^2.0.5
+
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.11
+  drift_dev: ^2.19.1
+
+flutter:
+  uses-material-design: true
