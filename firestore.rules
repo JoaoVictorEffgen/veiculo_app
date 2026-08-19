@@ -30,7 +30,7 @@ service cloud.firestore {
           ||
           (resource.data.status == 'moving'
             && request.resource.data.status == 'stopped'
-            && (resource.data.currentDriverId == request.auth.uid || isAdmin()))
+            && resource.data.currentDriverId == request.auth.uid)
         );
     }
 

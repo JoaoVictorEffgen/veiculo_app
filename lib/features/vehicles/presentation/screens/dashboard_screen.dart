@@ -17,7 +17,9 @@ class DashboardScreen extends ConsumerWidget {
     final vehicles = ref.watch(vehicleControllerProvider);
     final moving = vehicles.where((vehicle) => vehicle.status == VehicleStatus.moving).toList();
     final stopped = vehicles.where((vehicle) => vehicle.status == VehicleStatus.stopped).toList();
-    final myVehicle = vehicles.where((vehicle) => vehicle.currentDriverId == user?.id).firstOrNull;
+    final myVehicle = vehicles
+        .where((vehicle) => vehicle.currentDriverId == user?.id && vehicle.status == VehicleStatus.moving)
+        .firstOrNull;
 
     return Scaffold(
       appBar: AppBar(
@@ -134,7 +136,10 @@ class _VehicleCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isMoving = vehicle.status == VehicleStatus.moving;
     final color = isMoving ? AppColors.statusMoving : AppColors.statusStopped;
-    final isMine = vehicle.currentDriverId == user?.id;
+    final isMine = vehicle.currentDriverId == user?.id && isMoving;
+    final alreadyUsingAnother = ref.watch(vehicleControllerProvider).any(
+          (item) => item.currentDriverId == user?.id && item.status == VehicleStatus.moving && item.id != vehicle.id,
+        );
 
     return Card(
       color: isMine ? AppColors.statusMovingBg : AppColors.surface,
@@ -164,8 +169,13 @@ class _VehicleCard extends StatelessWidget {
           const SizedBox(height: 14),
           if (isMoving && isMine)
             OutlinedButton.icon(onPressed: () => _stop(context), icon: const Icon(Icons.stop_circle_outlined), label: const Text('PARAR / OFF'))
-          else if (!isMoving)
+          else if (!isMoving && !alreadyUsingAnother)
             ElevatedButton.icon(onPressed: () => _confirmStart(context), icon: const Icon(Icons.play_circle_outline), label: const Text('INICIAR / ON'))
+          else if (!isMoving && alreadyUsingAnother)
+            const Text(
+              'Voce ja esta usando outro veiculo.',
+              style: TextStyle(color: AppColors.textSecondary),
+            )
           else if (isMoving)
             const Text(
               'Veiculo indisponivel para outro motorista.',

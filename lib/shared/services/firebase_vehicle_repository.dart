@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../firebase_options.dart';
 import '../firebase/firestore_paths.dart';
@@ -122,7 +123,22 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<String?> startVehicle(String vehicleId, AppUser user) async {
-    final driverId = _auth.currentUser?.uid ?? user.id;
+    final authUser = _auth.currentUser;
+    if (authUser == null) return 'Sessao expirada. Faca login novamente.';
+    if (authUser.uid != user.id) return 'Sessao invalida. Faca login novamente.';
+    final driverId = authUser.uid;
+
+    final activeVehicles = await _firestore
+        .collection(FirestorePaths.vehicles)
+        .where('currentDriverId', isEqualTo: driverId)
+        .get();
+    for (final doc in activeVehicles.docs) {
+      final active = _vehicleFromDoc(doc);
+      if (active.status == VehicleStatus.moving && active.id != vehicleId) {
+        return 'Voce ja esta usando o veiculo ${active.name}. Pare ele antes de iniciar outro.';
+      }
+    }
+
     try {
       await _firestore.runTransaction((transaction) async {
         final vehicleRef = _firestore.collection(FirestorePaths.vehicles).doc(vehicleId);
@@ -165,7 +181,11 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<String?> stopVehicle(String vehicleId, AppUser user, String location) async {
-    final driverId = _auth.currentUser?.uid ?? user.id;
+    final authUser = _auth.currentUser;
+    if (authUser == null) return 'Sessao expirada. Faca login novamente.';
+    if (authUser.uid != user.id) return 'Sessao invalida. Faca login novamente.';
+    final driverId = authUser.uid;
+
     try {
       await _firestore.runTransaction((transaction) async {
         final vehicleRef = _firestore.collection(FirestorePaths.vehicles).doc(vehicleId);
@@ -173,7 +193,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         if (!vehicleSnap.exists) throw StateError('Veiculo nao encontrado.');
         final current = _vehicleFromDoc(vehicleSnap);
         if (current.status == VehicleStatus.stopped) throw StateError('Este veiculo ja esta parado.');
-        if (current.currentDriverId != driverId && user.role != UserRole.admin) {
+        if (current.currentDriverId != driverId) {
           throw StateError('Somente o motorista responsavel pode parar o veiculo.');
         }
         final now = Timestamp.now();
@@ -181,13 +201,16 @@ class FirebaseVehicleRepository implements VehicleRepository {
           'status': VehicleStatus.stopped.name,
           'stoppedAt': now,
           'stoppedLocation': location.trim(),
+          'currentDriverId': FieldValue.delete(),
+          'currentDriverName': FieldValue.delete(),
+          'startedAt': FieldValue.delete(),
         });
         final movementRef = _firestore.collection(FirestorePaths.movements).doc();
         transaction.set(movementRef, {
           'vehicleId': vehicleId,
           'vehicleName': current.name,
-          'driverId': current.currentDriverId ?? driverId,
-          'driverName': current.currentDriverName ?? user.name,
+          'driverId': driverId,
+          'driverName': user.name,
           'action': MovementAction.off.name,
           'createdAt': now,
           'location': location.trim(),
@@ -302,64 +325,84 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<void> ensureSeedData() async {
-    var adminExists = true;
+    if (_auth.currentUser != null) return;
+
+    final secondaryApp = await _createSecondaryApp();
     try {
-      await _auth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
-    } on FirebaseAuthException {
-      adminExists = false;
-      await _auth.signOut();
-    }
+      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+      final secondaryFirestore = FirebaseFirestore.instanceFor(app: secondaryApp);
 
-    if (!adminExists) {
-      for (final seed in _seedUsers) {
-        await _ensureAuthUser(seed);
+      var adminReady = false;
+      try {
+        await secondaryAuth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
+        adminReady = true;
+      } on FirebaseAuthException {
+        for (final seed in _seedUsers) {
+          await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
+        }
+        await secondaryAuth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
+        adminReady = true;
       }
-      await _auth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
-      await _seedVehiclesOnly();
-      await _auth.signOut();
-      return;
-    }
 
-    for (final seed in _seedUsers) {
-      await _ensureAuthUser(seed);
-    }
+      if (!adminReady) return;
 
-    final marker = await _firestore.collection(FirestorePaths.vehicles).doc('vehicle-1').get();
-    if (!marker.exists) {
-      await _seedVehiclesOnly();
-    }
+      for (final seed in _seedUsers) {
+        await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
+      }
 
-    await _auth.signOut();
+      await secondaryAuth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
+
+      final marker = await secondaryFirestore.collection(FirestorePaths.vehicles).doc('vehicle-1').get();
+      if (!marker.exists) {
+        final batch = secondaryFirestore.batch();
+        for (final vehicle in _seedVehicles) {
+          batch.set(secondaryFirestore.collection(FirestorePaths.vehicles).doc(vehicle.id), _vehicleToMap(vehicle));
+        }
+        await batch.commit();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Seed Firebase: $error\n$stackTrace');
+    } finally {
+      await secondaryApp.delete();
+    }
   }
 
-  Future<void> _ensureAuthUser(SeedUser seed) async {
+  Future<void> _ensureAuthUserWithSecondary(
+    FirebaseAuth secondaryAuth,
+    FirebaseFirestore secondaryFirestore,
+    SeedUser seed,
+  ) async {
+    String uid;
     try {
-      final credential = await _createAuthUserWithoutSwitchingSession(email: seed.email, password: seed.password);
-      await _ensureUserDoc(credential.user!.uid, seed);
+      final credential = await secondaryAuth.createUserWithEmailAndPassword(
+        email: seed.email,
+        password: seed.password,
+      );
+      uid = credential.user!.uid;
+      await secondaryFirestore.collection(FirestorePaths.users).doc(uid).set({
+        'name': seed.name,
+        'email': seed.email,
+        'role': seed.role.name,
+      });
+      return;
     } on FirebaseAuthException catch (error) {
       if (error.code != 'email-already-in-use') rethrow;
-      final credential = await _signInWithoutSwitchingSession(email: seed.email, password: seed.password);
-      await _ensureUserDoc(credential.user!.uid, seed);
+      final credential = await secondaryAuth.signInWithEmailAndPassword(
+        email: seed.email,
+        password: seed.password,
+      );
+      uid = credential.user!.uid;
     }
-  }
 
-  Future<void> _ensureUserDoc(String uid, SeedUser seed) async {
-    final ref = _firestore.collection(FirestorePaths.users).doc(uid);
-    final doc = await ref.get();
-    if (doc.exists) return;
+    final ref = secondaryFirestore.collection(FirestorePaths.users).doc(uid);
+    if ((await ref.get()).exists) return;
+
+    await secondaryAuth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
     await ref.set({
       'name': seed.name,
       'email': seed.email,
       'role': seed.role.name,
     });
-  }
-
-  Future<void> _seedVehiclesOnly() async {
-    final batch = _firestore.batch();
-    for (final vehicle in _seedVehicles) {
-      batch.set(_firestore.collection(FirestorePaths.vehicles).doc(vehicle.id), _vehicleToMap(vehicle));
-    }
-    await batch.commit();
   }
 
   Future<UserCredential> _createAuthUserWithoutSwitchingSession({required String email, required String password}) async {
