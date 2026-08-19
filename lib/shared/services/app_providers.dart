@@ -1,28 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/app_models.dart';
-import 'local_vehicle_repository.dart';
+import 'vehicle_repository.dart';
 
-final repositoryProvider = Provider<LocalVehicleRepository>((ref) {
+final repositoryProvider = Provider<VehicleRepository>((ref) {
   throw UnimplementedError('repositoryProvider must be overridden in main.dart');
 });
 
 class AuthController extends StateNotifier<AppUser?> {
-  AuthController(this._repository, {AppUser? initialUser}) : super(initialUser);
-
-  final LocalVehicleRepository _repository;
-
-  Future<String?> login(String email, String password) async {
-    final user = _repository.authenticate(email, password);
-    if (user == null) return 'E-mail ou senha invalidos.';
-    await _repository.saveSession(user);
-    state = user;
-    return null;
+  AuthController(this._repository) : super(_repository.currentUser) {
+    _subscription = _repository.authStateChanges.listen((user) => state = user);
   }
 
-  Future<void> logout() async {
-    await _repository.clearSession();
-    state = null;
+  final VehicleRepository _repository;
+  StreamSubscription<AppUser?>? _subscription;
+
+  Future<String?> login(String email, String password) => _repository.login(email, password);
+
+  Future<void> logout() => _repository.logout();
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 }
 
@@ -31,30 +33,23 @@ final authControllerProvider = StateNotifierProvider<AuthController, AppUser?>((
 });
 
 class VehicleController extends StateNotifier<List<Vehicle>> {
-  VehicleController(this._repository) : super(_repository.vehicles);
-
-  final LocalVehicleRepository _repository;
-
-  void refresh() => state = List.of(_repository.vehicles);
-
-  String? start(String vehicleId, AppUser user) {
-    try {
-      _repository.startVehicle(vehicleId, user);
-      refresh();
-      return null;
-    } on StateError catch (error) {
-      return error.message;
-    }
+  VehicleController(this._repository) : super(const []) {
+    _subscription = _repository.watchVehicles().listen((vehicles) => state = vehicles);
   }
 
-  String? stop(String vehicleId, AppUser user, String location) {
-    try {
-      _repository.stopVehicle(vehicleId, user, location);
-      refresh();
-      return null;
-    } on StateError catch (error) {
-      return error.message;
-    }
+  final VehicleRepository _repository;
+  StreamSubscription<List<Vehicle>>? _subscription;
+
+  void refresh() {}
+
+  Future<String?> start(String vehicleId, AppUser user) => _repository.startVehicle(vehicleId, user);
+
+  Future<String?> stop(String vehicleId, AppUser user, String location) => _repository.stopVehicle(vehicleId, user, location);
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 }
 
@@ -65,16 +60,12 @@ final vehicleControllerProvider = StateNotifierProvider<VehicleController, List<
 class AdminController extends StateNotifier<int> {
   AdminController(this._repository) : super(0);
 
-  final LocalVehicleRepository _repository;
+  final VehicleRepository _repository;
 
   Future<String?> addVehicle(AppUser actor, {required String name, required String model, required String plate}) async {
-    try {
-      await _repository.addVehicle(actor, name: name, model: model, plate: plate);
-      state++;
-      return null;
-    } on StateError catch (error) {
-      return error.message;
-    }
+    final error = await _repository.addVehicle(actor, name: name, model: model, plate: plate);
+    if (error == null) state++;
+    return error;
   }
 
   Future<String?> editVehicle(
@@ -84,33 +75,21 @@ class AdminController extends StateNotifier<int> {
     required String model,
     required String plate,
   }) async {
-    try {
-      await _repository.editVehicle(actor, vehicleId: vehicleId, name: name, model: model, plate: plate);
-      state++;
-      return null;
-    } on StateError catch (error) {
-      return error.message;
-    }
+    final error = await _repository.editVehicle(actor, vehicleId: vehicleId, name: name, model: model, plate: plate);
+    if (error == null) state++;
+    return error;
   }
 
   Future<String?> deleteVehicle(AppUser actor, String vehicleId) async {
-    try {
-      await _repository.deleteVehicle(actor, vehicleId);
-      state++;
-      return null;
-    } on StateError catch (error) {
-      return error.message;
-    }
+    final error = await _repository.deleteVehicle(actor, vehicleId);
+    if (error == null) state++;
+    return error;
   }
 
   Future<String?> addDriver(AppUser actor, {required String name, required String email, required String password}) async {
-    try {
-      await _repository.addDriver(actor, name: name, email: email, password: password);
-      state++;
-      return null;
-    } on StateError catch (error) {
-      return error.message;
-    }
+    final error = await _repository.addDriver(actor, name: name, email: email, password: password);
+    if (error == null) state++;
+    return error;
   }
 
   Future<String?> editDriver(
@@ -120,23 +99,15 @@ class AdminController extends StateNotifier<int> {
     required String email,
     required String password,
   }) async {
-    try {
-      await _repository.editDriver(actor, driverId: driverId, name: name, email: email, password: password);
-      state++;
-      return null;
-    } on StateError catch (error) {
-      return error.message;
-    }
+    final error = await _repository.editDriver(actor, driverId: driverId, name: name, email: email, password: password);
+    if (error == null) state++;
+    return error;
   }
 
   Future<String?> deleteDriver(AppUser actor, String driverId) async {
-    try {
-      await _repository.deleteDriver(actor, driverId);
-      state++;
-      return null;
-    } on StateError catch (error) {
-      return error.message;
-    }
+    final error = await _repository.deleteDriver(actor, driverId);
+    if (error == null) state++;
+    return error;
   }
 }
 
@@ -144,13 +115,12 @@ final adminControllerProvider = StateNotifierProvider<AdminController, int>((ref
   return AdminController(ref.watch(repositoryProvider));
 });
 
-final movementsProvider = Provider<List<Movement>>((ref) {
-  ref.watch(vehicleControllerProvider);
+final movementsProvider = StreamProvider<List<Movement>>((ref) {
   ref.watch(adminControllerProvider);
-  return ref.watch(repositoryProvider).movements;
+  return ref.watch(repositoryProvider).watchMovements();
 });
 
-final usersProvider = Provider<List<AppUser>>((ref) {
+final usersProvider = StreamProvider<List<AppUser>>((ref) {
   ref.watch(adminControllerProvider);
-  return ref.watch(repositoryProvider).users;
+  return ref.watch(repositoryProvider).watchUsers();
 });

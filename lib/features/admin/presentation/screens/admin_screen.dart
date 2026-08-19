@@ -22,7 +22,8 @@ class AdminScreen extends ConsumerWidget {
 
     ref.watch(adminControllerProvider);
     final vehicles = ref.watch(vehicleControllerProvider);
-    final drivers = ref.watch(usersProvider).where((item) => item.role == UserRole.driver).toList();
+    final users = ref.watch(usersProvider).valueOrNull ?? [];
+    final drivers = users.where((item) => item.role == UserRole.driver).toList();
     final moving = vehicles.where((item) => item.status == VehicleStatus.moving).length;
 
     return Scaffold(
@@ -139,7 +140,7 @@ class AdminScreen extends ConsumerWidget {
       final vehicle = await _selectVehicle(context, ref.watch(vehicleControllerProvider));
       if (vehicle != null && context.mounted) await _editVehicle(context, ref, admin, vehicle);
     } else {
-      final driver = await _selectDriver(context, ref.watch(usersProvider).where((item) => item.role == UserRole.driver).toList());
+      final driver = await _selectDriver(context, (ref.watch(usersProvider).valueOrNull ?? []).where((item) => item.role == UserRole.driver).toList());
       if (driver != null && context.mounted) await _editDriver(context, ref, admin, driver);
     }
   }
@@ -163,7 +164,7 @@ class AdminScreen extends ConsumerWidget {
       final vehicle = await _selectVehicle(context, ref.watch(vehicleControllerProvider));
       if (vehicle != null && context.mounted) await _deleteVehicle(context, ref, admin, vehicle);
     } else {
-      final driver = await _selectDriver(context, ref.watch(usersProvider).where((item) => item.role == UserRole.driver).toList());
+      final driver = await _selectDriver(context, (ref.watch(usersProvider).valueOrNull ?? []).where((item) => item.role == UserRole.driver).toList());
       if (driver != null && context.mounted) await _deleteDriver(context, ref, admin, driver);
     }
   }

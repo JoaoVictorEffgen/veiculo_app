@@ -1,21 +1,25 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
+import 'firebase_options.dart';
 import 'shared/services/app_providers.dart';
-import 'shared/services/local_vehicle_repository.dart';
+import 'shared/services/firebase_vehicle_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final repository = await LocalVehicleRepository.create();
-  final initialUser = await repository.restoreSession();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  final repository = FirebaseVehicleRepository();
+  await repository.ensureSeedData();
 
   runApp(
     ProviderScope(
       overrides: [
         repositoryProvider.overrideWithValue(repository),
-        authControllerProvider.overrideWith((ref) => AuthController(repository, initialUser: initialUser)),
+        authControllerProvider.overrideWith((ref) => AuthController(repository)),
       ],
       child: const VehicleControlApp(),
     ),

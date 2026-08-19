@@ -7,21 +7,35 @@ EM MOVIMENTO / PARADO, local de parada, histórico de movimentações.
 
 - [x] **Etapa 1** — Setup do projeto (estrutura, dependências, tema, navegação base)
 - [x] **Etapa 2** — MVP local consolidado (Drift, auth guard, CRUD admin, histórico com filtro)
-- [ ] Etapa 3 — Firebase (Auth + Firestore + sync em tempo real)
+- [x] **Etapa 3** — Firebase (Auth + Firestore + sync em tempo real)
 - [ ] Etapa 4 — Offline: fila local + sincronização
 - [ ] Etapa 5 — Build Android para celulares corporativos
+
+## Firebase
+
+- **Projeto:** `device-streaming-53bb0fb6`
+- **Conta:** joaoeffgens@gmail.com
+
+### Ativar no Console (se ainda nao fez)
+
+1. [Authentication](https://console.firebase.google.com/project/device-streaming-53bb0fb6/authentication) → E-mail/senha → Ativar
+2. [Firestore](https://console.firebase.google.com/project/device-streaming-53bb0fb6/firestore) → Criar banco → Regiao Sao Paulo
+3. Deploy das regras: `firebase deploy --only firestore:rules`
+
+O app cria automaticamente os usuarios e veiculos iniciais na primeira execucao (`ensureSeedData`).
 
 ## Como rodar
 
 ```bash
 flutter pub get
 dart run build_runner build
-flutter run
+flutterfire configure   # se necessario reconfigurar
+flutter run -d chrome   # ou -d android
 ```
 
-> Flutter instalado em `C:\src\flutter` — adicione `C:\src\flutter\bin` ao PATH se necessário.
+> Flutter: `C:\src\flutter\bin` — adicione ao PATH se necessario.
 
-### Credenciais de teste (MVP local)
+### Credenciais de teste
 
 | Perfil | E-mail | Senha |
 |---|---|---|
@@ -31,30 +45,19 @@ flutter run
 | Motorista 4 | motorista4@empresa.com | 123456 |
 | Admin | admin@empresa.com | 123456 |
 
-## Etapa 2 — o que foi implementado
+## Etapa 3 — o que foi implementado
 
-- Persistência local com **Drift** (usuários, veículos, movimentações, sessão)
-- **Auth guard** no router (rotas protegidas, admin isolado)
-- Sessão salva — ao reabrir o app, o motorista permanece logado
-- Confirmação antes de **INICIAR / ON**
-- Dialog de parada com **motorista identificado automaticamente**
-- Admin: **cadastrar, editar e excluir** motoristas e veículos
-- Histórico com **filtro por veículo**
-- Destaque do veículo em uso no dashboard
+- Firebase Auth (login real)
+- Firestore como fonte central (veiculos, usuarios, movimentacoes)
+- Sync em tempo real no dashboard e historico
+- Transacao atomica no INICIAR/ON (impede conflito entre motoristas)
+- Seed automatico na primeira execucao
+- Plataforma Android adicionada ao projeto
 
-## Estrutura de pastas
-
-Arquitetura em camadas por feature (`data` / `domain` / `presentation`).
-Veja `lib/features/*` para cada módulo (auth, vehicles, history, admin).
+## Estrutura
 
 ```
-lib/shared/database/   → Drift (SQLite / Web)
-lib/shared/models/       → Entidades unificadas
-lib/shared/services/     → Repositório + Riverpod providers
+lib/shared/services/firebase_vehicle_repository.dart  → backend Firebase
+lib/shared/services/local_vehicle_repository.dart       → cache local (Etapa 4)
+lib/firebase_options.dart                               → config gerada pelo FlutterFire
 ```
-
-## Próximo passo (Etapa 3)
-
-1. Criar projeto no [Firebase Console](https://console.firebase.google.com)
-2. Rodar `flutterfire configure`
-3. Substituir repositório local por Firestore + Firebase Auth

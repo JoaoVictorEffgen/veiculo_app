@@ -189,7 +189,7 @@ class _VehicleCard extends StatelessWidget {
       ),
     );
     if (confirmed != true || !context.mounted) return;
-    final error = ref.read(vehicleControllerProvider.notifier).start(vehicle.id, user!);
+    final error = await ref.read(vehicleControllerProvider.notifier).start(vehicle.id, user!);
     if (error != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
     }
@@ -227,7 +227,7 @@ class _VehicleCard extends StatelessWidget {
     );
     controller.dispose();
     if (location == null || !context.mounted) return;
-    final error = ref.read(vehicleControllerProvider.notifier).stop(vehicle.id, user!, location);
+    final error = await ref.read(vehicleControllerProvider.notifier).stop(vehicle.id, user!, location);
     if (error != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
     }
