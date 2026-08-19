@@ -13,7 +13,7 @@ class DashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authControllerProvider);
+    final user = ref.watch(authControllerProvider).user;
     final vehicles = ref.watch(vehicleControllerProvider);
     final moving = vehicles.where((vehicle) => vehicle.status == VehicleStatus.moving).toList();
     final stopped = vehicles.where((vehicle) => vehicle.status == VehicleStatus.stopped).toList();

@@ -1,7 +1,9 @@
 import 'package:drift/drift.dart';
 
 import '../database/app_database.dart';
+import '../../core/utils/date_formatter.dart';
 import '../models/app_models.dart';
+import '../seed/app_seed_data.dart';
 
 const _sessionKey = 'current_user_id';
 
@@ -48,23 +50,18 @@ class LocalVehicleRepository {
       return;
     }
 
-    const seedUsers = [
-      AppUser(id: 'driver-1', name: 'Joao Silva', email: 'motorista1@empresa.com', password: '123456', role: UserRole.driver),
-      AppUser(id: 'driver-2', name: 'Carlos Santos', email: 'motorista2@empresa.com', password: '123456', role: UserRole.driver),
-      AppUser(id: 'driver-3', name: 'Marina Costa', email: 'motorista3@empresa.com', password: '123456', role: UserRole.driver),
-      AppUser(id: 'driver-4', name: 'Pedro Oliveira', email: 'motorista4@empresa.com', password: '123456', role: UserRole.driver),
-      AppUser(id: 'admin-1', name: 'Administrador', email: 'admin@empresa.com', password: '123456', role: UserRole.admin),
+    final seedUsers = [
+      for (var i = 0; i < AppSeedData.users.length; i++)
+        AppUser(
+          id: AppSeedData.users[i].role == UserRole.admin ? 'admin-1' : 'driver-${i + 1}',
+          name: AppSeedData.users[i].name,
+          email: AppSeedData.users[i].email,
+          password: AppSeedData.users[i].password,
+          role: AppSeedData.users[i].role,
+        ),
     ];
 
-    const seedVehicles = [
-      Vehicle(id: 'vehicle-1', name: 'Strada 01', model: 'Fiat Strada', plate: 'ABC-1D23', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-      Vehicle(id: 'vehicle-2', name: 'Toro 01', model: 'Fiat Toro', plate: 'DEF-4G56', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-      Vehicle(id: 'vehicle-3', name: 'Hilux', model: 'Toyota Hilux', plate: 'GHI-7J89', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-      Vehicle(id: 'vehicle-4', name: 'Saveiro', model: 'VW Saveiro', plate: 'JKL-0M12', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-      Vehicle(id: 'vehicle-5', name: 'Ranger', model: 'Ford Ranger', plate: 'MNO-3P45', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-      Vehicle(id: 'vehicle-6', name: 'Master', model: 'Renault Master', plate: 'PQR-6S78', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-      Vehicle(id: 'vehicle-7', name: 'Fiorino', model: 'Fiat Fiorino', plate: 'STU-9V01', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-    ];
+    const seedVehicles = AppSeedData.vehicles;
 
     await _db.batch((batch) {
       for (final user in seedUsers) {
@@ -179,7 +176,7 @@ class LocalVehicleRepository {
     required String driverId,
     required String name,
     required String email,
-    required String password,
+    String? password,
   }) async {
     _requireAdmin(actor);
     final index = _usersCache.indexWhere((user) => user.id == driverId && user.role == UserRole.driver);
@@ -187,11 +184,12 @@ class LocalVehicleRepository {
     if (_usersCache.any((user) => user.id != driverId && user.email.toLowerCase() == email.trim().toLowerCase())) {
       throw StateError('Ja existe um usuario com esse e-mail.');
     }
+    final current = _usersCache[index];
     final updated = AppUser(
       id: driverId,
       name: name.trim(),
       email: email.trim().toLowerCase(),
-      password: password,
+      password: password == null || password.isEmpty ? current.password : password,
       role: UserRole.driver,
     );
     _usersCache[index] = updated;
@@ -214,7 +212,7 @@ class LocalVehicleRepository {
     if (index < 0) throw StateError('Veiculo nao encontrado.');
     final current = _vehiclesCache[index];
     if (current.status == VehicleStatus.moving) {
-      final since = formatVehicleTime(current.startedAt);
+      final since = formatTime(current.startedAt);
       throw StateError('Veiculo indisponivel: ${current.name} esta em uso por ${current.currentDriverName} desde $since.');
     }
     final now = DateTime.now();
@@ -247,11 +245,15 @@ class LocalVehicleRepository {
     if (index < 0) throw StateError('Veiculo nao encontrado.');
     final current = _vehiclesCache[index];
     if (current.status == VehicleStatus.stopped) throw StateError('Este veiculo ja esta parado.');
-    if (current.currentDriverId != user.id && user.role != UserRole.admin) {
+    if (current.currentDriverId != user.id) {
       throw StateError('Somente o motorista responsavel pode parar o veiculo.');
     }
     final now = DateTime.now();
-    final updated = current.copyWith(
+    final updated = Vehicle(
+      id: current.id,
+      name: current.name,
+      model: current.model,
+      plate: current.plate,
       status: VehicleStatus.stopped,
       stoppedAt: now,
       stoppedLocation: location.trim(),
@@ -364,12 +366,4 @@ class LocalVehicleRepository {
         createdAt: row.createdAt,
         location: row.location,
       );
-}
-
-String formatVehicleTime(DateTime? value) {
-  if (value == null) return '--';
-  final local = value.toLocal();
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return '$hour:$minute';
 }

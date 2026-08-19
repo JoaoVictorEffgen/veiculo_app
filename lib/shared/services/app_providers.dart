@@ -4,19 +4,24 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/app_models.dart';
+import '../models/auth_session.dart';
 import 'vehicle_repository.dart';
 
 final repositoryProvider = Provider<VehicleRepository>((ref) {
   throw UnimplementedError('repositoryProvider must be overridden in main.dart');
 });
 
-class AuthController extends StateNotifier<AppUser?> {
-  AuthController(this._repository) : super(_repository.currentUser) {
-    _subscription = _repository.authStateChanges.listen((user) => state = user);
+class AuthController extends StateNotifier<AuthSession> {
+  AuthController(this._repository) : super(const AuthSession.loading()) {
+    _subscription = _repository.authStateChanges.listen((user) {
+      state = AuthSession.ready(user);
+    });
   }
 
   final VehicleRepository _repository;
   StreamSubscription<AppUser?>? _subscription;
+
+  AppUser? get user => state.user;
 
   Future<String?> login(String email, String password) => _repository.login(email, password);
 
@@ -29,7 +34,7 @@ class AuthController extends StateNotifier<AppUser?> {
   }
 }
 
-final authControllerProvider = StateNotifierProvider<AuthController, AppUser?>((ref) {
+final authControllerProvider = StateNotifierProvider<AuthController, AuthSession>((ref) {
   throw UnimplementedError('authControllerProvider must be overridden in main.dart');
 });
 
@@ -113,7 +118,7 @@ class AdminController extends StateNotifier<int> {
     required String driverId,
     required String name,
     required String email,
-    required String password,
+    String? password,
   }) async {
     final error = await _repository.editDriver(actor, driverId: driverId, name: name, email: email, password: password);
     if (error == null) state++;

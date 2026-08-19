@@ -8,6 +8,7 @@ import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/history/presentation/screens/history_screen.dart';
 import '../features/vehicles/presentation/screens/dashboard_screen.dart';
 import '../shared/models/app_models.dart';
+import '../shared/models/auth_session.dart';
 import '../shared/services/app_providers.dart';
 
 class AppRoutes {
@@ -22,7 +23,7 @@ class AppRoutes {
 
 class RouterNotifier extends ChangeNotifier {
   RouterNotifier(this.ref) {
-    ref.listen<AppUser?>(authControllerProvider, (_, __) => notifyListeners());
+    ref.listen<AuthSession>(authControllerProvider, (_, __) => notifyListeners());
   }
 
   final Ref ref;
@@ -34,8 +35,14 @@ final routerNotifierProvider = Provider<RouterNotifier>((ref) {
   return notifier;
 });
 
-String? resolveRedirect(GoRouterState state, AppUser? user) {
+String? resolveRedirect(GoRouterState state, AuthSession session) {
   final location = state.matchedLocation;
+
+  if (!session.isReady) {
+    return location == AppRoutes.splash ? null : AppRoutes.splash;
+  }
+
+  final user = session.user;
 
   if (location == AppRoutes.splash) {
     if (user == null) return AppRoutes.login;

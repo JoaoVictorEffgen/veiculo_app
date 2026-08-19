@@ -34,7 +34,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
-    final user = ref.read(authControllerProvider);
+    final user = ref.read(authControllerProvider).user;
     if (!mounted || user == null) return;
     context.go(user.role == UserRole.admin ? AppRoutes.admin : AppRoutes.dashboard);
   }

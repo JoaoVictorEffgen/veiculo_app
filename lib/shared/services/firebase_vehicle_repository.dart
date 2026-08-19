@@ -6,16 +6,8 @@ import 'package:flutter/foundation.dart';
 import '../../firebase_options.dart';
 import '../firebase/firestore_paths.dart';
 import '../models/app_models.dart';
+import '../seed/app_seed_data.dart';
 import 'vehicle_repository.dart';
-
-class SeedUser {
-  const SeedUser({required this.name, required this.email, required this.password, required this.role});
-
-  final String name;
-  final String email;
-  final String password;
-  final UserRole role;
-}
 
 class FirebaseVehicleRepository implements VehicleRepository {
   FirebaseVehicleRepository({
@@ -29,23 +21,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   AppUser? _cachedUser;
 
-  static const _seedUsers = [
-    SeedUser(name: 'Joao Silva', email: 'motorista1@empresa.com', password: '123456', role: UserRole.driver),
-    SeedUser(name: 'Carlos Santos', email: 'motorista2@empresa.com', password: '123456', role: UserRole.driver),
-    SeedUser(name: 'Marina Costa', email: 'motorista3@empresa.com', password: '123456', role: UserRole.driver),
-    SeedUser(name: 'Pedro Oliveira', email: 'motorista4@empresa.com', password: '123456', role: UserRole.driver),
-    SeedUser(name: 'Administrador', email: 'admin@empresa.com', password: '123456', role: UserRole.admin),
-  ];
-
-  static const _seedVehicles = [
-    Vehicle(id: 'vehicle-1', name: 'Strada 01', model: 'Fiat Strada', plate: 'ABC-1D23', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-    Vehicle(id: 'vehicle-2', name: 'Toro 01', model: 'Fiat Toro', plate: 'DEF-4G56', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-    Vehicle(id: 'vehicle-3', name: 'Hilux', model: 'Toyota Hilux', plate: 'GHI-7J89', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-    Vehicle(id: 'vehicle-4', name: 'Saveiro', model: 'VW Saveiro', plate: 'JKL-0M12', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-    Vehicle(id: 'vehicle-5', name: 'Ranger', model: 'Ford Ranger', plate: 'MNO-3P45', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-    Vehicle(id: 'vehicle-6', name: 'Master', model: 'Renault Master', plate: 'PQR-6S78', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-    Vehicle(id: 'vehicle-7', name: 'Fiorino', model: 'Fiat Fiorino', plate: 'STU-9V01', status: VehicleStatus.stopped, stoppedLocation: 'Garagem da empresa'),
-  ];
+  static const _seedUsers = AppSeedData.users;
+  static const _seedVehicles = AppSeedData.vehicles;
 
   @override
   AppUser? get currentUser => _cachedUser;
@@ -297,7 +274,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   @override
-  Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, required String password}) async {
+  Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, String? password}) async {
     if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
     try {
       await _firestore.collection(FirestorePaths.users).doc(driverId).update({
@@ -409,18 +386,6 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final secondaryApp = await _createSecondaryApp();
     try {
       return await FirebaseAuth.instanceFor(app: secondaryApp).createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-    } finally {
-      await secondaryApp.delete();
-    }
-  }
-
-  Future<UserCredential> _signInWithoutSwitchingSession({required String email, required String password}) async {
-    final secondaryApp = await _createSecondaryApp();
-    try {
-      return await FirebaseAuth.instanceFor(app: secondaryApp).signInWithEmailAndPassword(
         email: email,
         password: password,
       );

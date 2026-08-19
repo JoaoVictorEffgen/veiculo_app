@@ -12,7 +12,7 @@ class AdminScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authControllerProvider);
+    final user = ref.watch(authControllerProvider).user;
     if (user?.role != UserRole.admin) {
       return Scaffold(
         appBar: AppBar(title: const Text('Acesso negado')),
@@ -237,9 +237,21 @@ class AdminScreen extends ConsumerWidget {
   }
 
   Future<void> _editDriver(BuildContext context, WidgetRef ref, AppUser admin, AppUser driver) async {
-    final values = await _driverForm(context, title: 'Editar motorista', initialName: driver.name, initialEmail: driver.email, initialPassword: driver.password);
+    final values = await _driverForm(
+      context,
+      title: 'Editar motorista',
+      initialName: driver.name,
+      initialEmail: driver.email,
+      passwordOptional: true,
+    );
     if (values == null || !context.mounted) return;
-    final error = await ref.read(adminControllerProvider.notifier).editDriver(admin, driverId: driver.id, name: values[0], email: values[1], password: values[2]);
+    final error = await ref.read(adminControllerProvider.notifier).editDriver(
+          admin,
+          driverId: driver.id,
+          name: values[0],
+          email: values[1],
+          password: values[2].isEmpty ? null : values[2],
+        );
     if (error != null && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
   }
 
@@ -312,11 +324,11 @@ class AdminScreen extends ConsumerWidget {
     required String title,
     String? initialName,
     String? initialEmail,
-    String? initialPassword,
+    bool passwordOptional = false,
   }) async {
     final name = TextEditingController(text: initialName);
     final email = TextEditingController(text: initialEmail);
-    final password = TextEditingController(text: initialPassword);
+    final password = TextEditingController();
     final result = await showDialog<List<String>>(
       context: context,
       builder: (context) => AlertDialog(
@@ -327,7 +339,12 @@ class AdminScreen extends ConsumerWidget {
             children: [
               TextField(controller: name, decoration: const InputDecoration(labelText: 'Nome')),
               TextField(controller: email, decoration: const InputDecoration(labelText: 'E-mail')),
-              TextField(controller: password, decoration: const InputDecoration(labelText: 'Senha')),
+              TextField(
+                controller: password,
+                decoration: InputDecoration(
+                  labelText: passwordOptional ? 'Nova senha (opcional)' : 'Senha',
+                ),
+              ),
             ],
           ),
         ),
@@ -335,7 +352,8 @@ class AdminScreen extends ConsumerWidget {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
           ElevatedButton(
             onPressed: () {
-              if (name.text.trim().isNotEmpty && email.text.trim().isNotEmpty && password.text.isNotEmpty) {
+              final hasPassword = password.text.isNotEmpty;
+              if (name.text.trim().isNotEmpty && email.text.trim().isNotEmpty && (passwordOptional || hasPassword)) {
                 Navigator.pop(context, [name.text, email.text, password.text]);
               }
             },

@@ -27,12 +27,8 @@ dependencies:
   path_provider: ^2.1.4
   path: ^1.9.0
 
-  # Conectividade
-  connectivity_plus: ^6.0.5
-
   # Utilitários
   intl: ^0.19.0
-  equatable: ^2.0.5
 
   cupertino_icons: ^1.0.6
 

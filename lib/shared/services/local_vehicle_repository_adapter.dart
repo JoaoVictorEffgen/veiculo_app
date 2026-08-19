@@ -29,7 +29,10 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   AppUser? get currentUser => _local.currentUser;
 
   @override
-  Stream<AppUser?> get authStateChanges => _authController.stream;
+  Stream<AppUser?> get authStateChanges async* {
+    yield _local.currentUser;
+    yield* _authController.stream;
+  }
 
   @override
   Future<String?> login(String email, String password) async {
@@ -125,7 +128,7 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   }
 
   @override
-  Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, required String password}) async {
+  Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, String? password}) async {
     try {
       await _local.editDriver(actor, driverId: driverId, name: name, email: email, password: password);
       _sync();
