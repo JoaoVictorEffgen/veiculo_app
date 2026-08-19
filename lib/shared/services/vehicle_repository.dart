@@ -8,6 +8,7 @@ abstract class VehicleRepository {
   Future<void> logout();
 
   Stream<List<Vehicle>> watchVehicles();
+  Future<List<Vehicle>> fetchVehicles();
   Stream<List<Movement>> watchMovements();
   Stream<List<AppUser>> watchUsers();
 

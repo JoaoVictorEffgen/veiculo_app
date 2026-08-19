@@ -20,22 +20,18 @@ service cloud.firestore {
         && request.resource.data.plate == resource.data.plate;
     }
 
-    function isOperationalVehicleUpdate() {
-      return vehicleIdentityUnchanged()
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'currentDriverId', 'currentDriverName', 'startedAt', 'stoppedAt', 'stoppedLocation']);
-    }
-
-    function isStartVehicle() {
-      return resource.data.status == 'stopped'
-        && request.resource.data.status == 'moving'
-        && request.resource.data.currentDriverId == request.auth.uid;
-    }
-
-    function isStopVehicle() {
-      return resource.data.status == 'moving'
-        && request.resource.data.status == 'stopped'
-        && (resource.data.currentDriverId == request.auth.uid || isAdmin());
+    function canOperateVehicle() {
+      return isSignedIn()
+        && vehicleIdentityUnchanged()
+        && (
+          (resource.data.status == 'stopped'
+            && request.resource.data.status == 'moving'
+            && request.resource.data.currentDriverId == request.auth.uid)
+          ||
+          (resource.data.status == 'moving'
+            && request.resource.data.status == 'stopped'
+            && (resource.data.currentDriverId == request.auth.uid || isAdmin()))
+        );
     }
 
     match /users/{userId} {
@@ -47,8 +43,7 @@ service cloud.firestore {
     match /vehicles/{vehicleId} {
       allow read: if isSignedIn();
       allow create, delete: if isAdmin();
-      allow update: if isAdmin()
-        || (isSignedIn() && isOperationalVehicleUpdate() && (isStartVehicle() || isStopVehicle()));
+      allow update: if isAdmin() || canOperateVehicle();
     }
 
     match /movements/{movementId} {

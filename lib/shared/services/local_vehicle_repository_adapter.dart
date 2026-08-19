@@ -50,6 +50,9 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   Stream<List<Vehicle>> watchVehicles() => _vehiclesController.stream;
 
   @override
+  Future<List<Vehicle>> fetchVehicles() async => _local.vehicles;
+
+  @override
   Stream<List<Movement>> watchMovements() => _movementsController.stream;
 
   @override

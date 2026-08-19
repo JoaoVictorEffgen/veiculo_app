@@ -94,6 +94,13 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   @override
+  Future<List<Vehicle>> fetchVehicles() async {
+    if (_auth.currentUser == null) return const [];
+    final snapshot = await _firestore.collection(FirestorePaths.vehicles).orderBy('name').get();
+    return snapshot.docs.map(_vehicleFromDoc).toList();
+  }
+
+  @override
   Stream<List<Movement>> watchMovements() {
     return _auth.authStateChanges().asyncExpand((user) {
       if (user == null) return Stream.value(const <Movement>[]);
@@ -115,6 +122,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<String?> startVehicle(String vehicleId, AppUser user) async {
+    final driverId = _auth.currentUser?.uid ?? user.id;
     try {
       await _firestore.runTransaction((transaction) async {
         final vehicleRef = _firestore.collection(FirestorePaths.vehicles).doc(vehicleId);
@@ -128,17 +136,17 @@ class FirebaseVehicleRepository implements VehicleRepository {
         final now = Timestamp.now();
         transaction.update(vehicleRef, {
           'status': VehicleStatus.moving.name,
-          'currentDriverId': user.id,
+          'currentDriverId': driverId,
           'currentDriverName': user.name,
           'startedAt': now,
-          'stoppedAt': null,
-          'stoppedLocation': null,
+          'stoppedAt': FieldValue.delete(),
+          'stoppedLocation': FieldValue.delete(),
         });
         final movementRef = _firestore.collection(FirestorePaths.movements).doc();
         transaction.set(movementRef, {
           'vehicleId': vehicleId,
           'vehicleName': current.name,
-          'driverId': user.id,
+          'driverId': driverId,
           'driverName': user.name,
           'action': MovementAction.on.name,
           'createdAt': now,
@@ -150,11 +158,14 @@ class FirebaseVehicleRepository implements VehicleRepository {
       return error.message;
     } on FirebaseException catch (error) {
       return error.message ?? 'Erro ao iniciar veiculo.';
+    } catch (error) {
+      return 'Erro ao iniciar veiculo: $error';
     }
   }
 
   @override
   Future<String?> stopVehicle(String vehicleId, AppUser user, String location) async {
+    final driverId = _auth.currentUser?.uid ?? user.id;
     try {
       await _firestore.runTransaction((transaction) async {
         final vehicleRef = _firestore.collection(FirestorePaths.vehicles).doc(vehicleId);
@@ -162,7 +173,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         if (!vehicleSnap.exists) throw StateError('Veiculo nao encontrado.');
         final current = _vehicleFromDoc(vehicleSnap);
         if (current.status == VehicleStatus.stopped) throw StateError('Este veiculo ja esta parado.');
-        if (current.currentDriverId != user.id && user.role != UserRole.admin) {
+        if (current.currentDriverId != driverId && user.role != UserRole.admin) {
           throw StateError('Somente o motorista responsavel pode parar o veiculo.');
         }
         final now = Timestamp.now();
@@ -175,7 +186,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         transaction.set(movementRef, {
           'vehicleId': vehicleId,
           'vehicleName': current.name,
-          'driverId': current.currentDriverId ?? user.id,
+          'driverId': current.currentDriverId ?? driverId,
           'driverName': current.currentDriverName ?? user.name,
           'action': MovementAction.off.name,
           'createdAt': now,
@@ -187,6 +198,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
       return error.message;
     } on FirebaseException catch (error) {
       return error.message ?? 'Erro ao parar veiculo.';
+    } catch (error) {
+      return 'Erro ao parar veiculo: $error';
     }
   }
 

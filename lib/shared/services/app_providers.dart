@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/app_models.dart';
@@ -34,17 +35,32 @@ final authControllerProvider = StateNotifierProvider<AuthController, AppUser?>((
 
 class VehicleController extends StateNotifier<List<Vehicle>> {
   VehicleController(this._repository) : super(const []) {
-    _subscription = _repository.watchVehicles().listen((vehicles) => state = vehicles);
+    _subscription = _repository.watchVehicles().listen(
+      (vehicles) => state = vehicles,
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Erro no stream de veiculos: $error');
+      },
+    );
   }
 
   final VehicleRepository _repository;
   StreamSubscription<List<Vehicle>>? _subscription;
 
-  void refresh() {}
+  Future<void> refresh() async {
+    state = await _repository.fetchVehicles();
+  }
 
-  Future<String?> start(String vehicleId, AppUser user) => _repository.startVehicle(vehicleId, user);
+  Future<String?> start(String vehicleId, AppUser user) async {
+    final error = await _repository.startVehicle(vehicleId, user);
+    if (error == null) await refresh();
+    return error;
+  }
 
-  Future<String?> stop(String vehicleId, AppUser user, String location) => _repository.stopVehicle(vehicleId, user, location);
+  Future<String?> stop(String vehicleId, AppUser user, String location) async {
+    final error = await _repository.stopVehicle(vehicleId, user, location);
+    if (error == null) await refresh();
+    return error;
+  }
 
   @override
   void dispose() {
