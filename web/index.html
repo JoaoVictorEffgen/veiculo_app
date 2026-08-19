@@ -54,10 +54,24 @@
   </div>
   <script src="flutter_bootstrap.js" async></script>
   <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (registrations) {
+        for (const registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
+
     window.addEventListener('flutter-first-frame', function () {
       const loading = document.getElementById('loading');
       if (loading) loading.remove();
     });
+
+    setTimeout(function () {
+      const loading = document.getElementById('loading');
+      if (!loading) return;
+      loading.innerHTML = '<strong>Controle de Veiculos</strong><p style="max-width:280px;text-align:center;padding:0 16px">Demorou para carregar. Limpe o cache do Chrome e abra novamente, ou use aba anonima.</p>';
+    }, 45000);
   </script>
 </body>
 </html>
