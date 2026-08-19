@@ -14,6 +14,30 @@ service cloud.firestore {
       return isSignedIn() && userDoc().role == 'admin';
     }
 
+    function vehicleIdentityUnchanged() {
+      return request.resource.data.name == resource.data.name
+        && request.resource.data.model == resource.data.model
+        && request.resource.data.plate == resource.data.plate;
+    }
+
+    function isOperationalVehicleUpdate() {
+      return vehicleIdentityUnchanged()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'currentDriverId', 'currentDriverName', 'startedAt', 'stoppedAt', 'stoppedLocation']);
+    }
+
+    function isStartVehicle() {
+      return resource.data.status == 'stopped'
+        && request.resource.data.status == 'moving'
+        && request.resource.data.currentDriverId == request.auth.uid;
+    }
+
+    function isStopVehicle() {
+      return resource.data.status == 'moving'
+        && request.resource.data.status == 'stopped'
+        && (resource.data.currentDriverId == request.auth.uid || isAdmin());
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
@@ -22,7 +46,9 @@ service cloud.firestore {
 
     match /vehicles/{vehicleId} {
       allow read: if isSignedIn();
-      allow create, update, delete: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (isSignedIn() && isOperationalVehicleUpdate() && (isStartVehicle() || isStopVehicle()));
     }
 
     match /movements/{movementId} {

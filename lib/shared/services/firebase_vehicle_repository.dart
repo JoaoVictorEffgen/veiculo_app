@@ -289,38 +289,56 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<void> ensureSeedData() async {
+    var adminExists = true;
     try {
       await _auth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
-      final marker = await _firestore.collection(FirestorePaths.vehicles).doc('vehicle-1').get();
-      if (marker.exists) {
-        await _auth.signOut();
-        return;
+    } on FirebaseAuthException {
+      adminExists = false;
+      await _auth.signOut();
+    }
+
+    if (!adminExists) {
+      for (final seed in _seedUsers) {
+        await _ensureAuthUser(seed);
       }
+      await _auth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
       await _seedVehiclesOnly();
       await _auth.signOut();
       return;
-    } on FirebaseAuthException {
-      // Usuarios ainda nao existem — cria tudo do zero.
     }
 
-    await _auth.signOut();
     for (final seed in _seedUsers) {
-      try {
-        final credential = await _auth.createUserWithEmailAndPassword(email: seed.email, password: seed.password);
-        await _firestore.collection(FirestorePaths.users).doc(credential.user!.uid).set({
-          'name': seed.name,
-          'email': seed.email,
-          'role': seed.role.name,
-        });
-      } on FirebaseAuthException catch (error) {
-        if (error.code != 'email-already-in-use') rethrow;
-      }
-      await _auth.signOut();
+      await _ensureAuthUser(seed);
     }
 
-    await _auth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
-    await _seedVehiclesOnly();
+    final marker = await _firestore.collection(FirestorePaths.vehicles).doc('vehicle-1').get();
+    if (!marker.exists) {
+      await _seedVehiclesOnly();
+    }
+
     await _auth.signOut();
+  }
+
+  Future<void> _ensureAuthUser(SeedUser seed) async {
+    try {
+      final credential = await _createAuthUserWithoutSwitchingSession(email: seed.email, password: seed.password);
+      await _ensureUserDoc(credential.user!.uid, seed);
+    } on FirebaseAuthException catch (error) {
+      if (error.code != 'email-already-in-use') rethrow;
+      final credential = await _signInWithoutSwitchingSession(email: seed.email, password: seed.password);
+      await _ensureUserDoc(credential.user!.uid, seed);
+    }
+  }
+
+  Future<void> _ensureUserDoc(String uid, SeedUser seed) async {
+    final ref = _firestore.collection(FirestorePaths.users).doc(uid);
+    final doc = await ref.get();
+    if (doc.exists) return;
+    await ref.set({
+      'name': seed.name,
+      'email': seed.email,
+      'role': seed.role.name,
+    });
   }
 
   Future<void> _seedVehiclesOnly() async {
@@ -332,10 +350,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   Future<UserCredential> _createAuthUserWithoutSwitchingSession({required String email, required String password}) async {
-    final secondaryApp = await Firebase.initializeApp(
-      name: 'SecondaryAuth_${DateTime.now().microsecondsSinceEpoch}',
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    final secondaryApp = await _createSecondaryApp();
     try {
       return await FirebaseAuth.instanceFor(app: secondaryApp).createUserWithEmailAndPassword(
         email: email,
@@ -344,6 +359,25 @@ class FirebaseVehicleRepository implements VehicleRepository {
     } finally {
       await secondaryApp.delete();
     }
+  }
+
+  Future<UserCredential> _signInWithoutSwitchingSession({required String email, required String password}) async {
+    final secondaryApp = await _createSecondaryApp();
+    try {
+      return await FirebaseAuth.instanceFor(app: secondaryApp).signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } finally {
+      await secondaryApp.delete();
+    }
+  }
+
+  Future<FirebaseApp> _createSecondaryApp() {
+    return Firebase.initializeApp(
+      name: 'SecondaryAuth_${DateTime.now().microsecondsSinceEpoch}',
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
   }
 
   Future<AppUser?> _loadAppUser(String uid) async {
