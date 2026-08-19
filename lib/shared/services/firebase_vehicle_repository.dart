@@ -85,23 +85,32 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<Vehicle>> watchVehicles() {
-    return _firestore.collection(FirestorePaths.vehicles).orderBy('name').snapshots().map(
-          (snapshot) => snapshot.docs.map(_vehicleFromDoc).toList(),
-        );
+    return _auth.authStateChanges().asyncExpand((user) {
+      if (user == null) return Stream.value(const <Vehicle>[]);
+      return _firestore.collection(FirestorePaths.vehicles).orderBy('name').snapshots().map(
+            (snapshot) => snapshot.docs.map(_vehicleFromDoc).toList(),
+          );
+    });
   }
 
   @override
   Stream<List<Movement>> watchMovements() {
-    return _firestore.collection(FirestorePaths.movements).orderBy('createdAt', descending: true).snapshots().map(
-          (snapshot) => snapshot.docs.map(_movementFromDoc).toList(),
-        );
+    return _auth.authStateChanges().asyncExpand((user) {
+      if (user == null) return Stream.value(const <Movement>[]);
+      return _firestore.collection(FirestorePaths.movements).orderBy('createdAt', descending: true).snapshots().map(
+            (snapshot) => snapshot.docs.map(_movementFromDoc).toList(),
+          );
+    });
   }
 
   @override
   Stream<List<AppUser>> watchUsers() {
-    return _firestore.collection(FirestorePaths.users).orderBy('name').snapshots().map(
-          (snapshot) => snapshot.docs.map(_userFromDoc).toList(),
-        );
+    return _auth.authStateChanges().asyncExpand((user) {
+      if (user == null) return Stream.value(const <AppUser>[]);
+      return _firestore.collection(FirestorePaths.users).orderBy('name').snapshots().map(
+            (snapshot) => snapshot.docs.map(_userFromDoc).toList(),
+          );
+    });
   }
 
   @override
@@ -280,9 +289,21 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<void> ensureSeedData() async {
-    final marker = await _firestore.collection(FirestorePaths.vehicles).doc('vehicle-1').get();
-    if (marker.exists) return;
+    try {
+      await _auth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
+      final marker = await _firestore.collection(FirestorePaths.vehicles).doc('vehicle-1').get();
+      if (marker.exists) {
+        await _auth.signOut();
+        return;
+      }
+      await _seedVehiclesOnly();
+      await _auth.signOut();
+      return;
+    } on FirebaseAuthException {
+      // Usuarios ainda nao existem — cria tudo do zero.
+    }
 
+    await _auth.signOut();
     for (final seed in _seedUsers) {
       try {
         final credential = await _auth.createUserWithEmailAndPassword(email: seed.email, password: seed.password);
@@ -298,13 +319,16 @@ class FirebaseVehicleRepository implements VehicleRepository {
     }
 
     await _auth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
+    await _seedVehiclesOnly();
+    await _auth.signOut();
+  }
 
+  Future<void> _seedVehiclesOnly() async {
     final batch = _firestore.batch();
     for (final vehicle in _seedVehicles) {
       batch.set(_firestore.collection(FirestorePaths.vehicles).doc(vehicle.id), _vehicleToMap(vehicle));
     }
     await batch.commit();
-    await _auth.signOut();
   }
 
   Future<UserCredential> _createAuthUserWithoutSwitchingSession({required String email, required String password}) async {
