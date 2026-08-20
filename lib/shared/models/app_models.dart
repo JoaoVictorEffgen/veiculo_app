@@ -118,3 +118,49 @@ class DriverTrack {
   final double? accuracy;
   final double? heading;
 }
+
+enum AnnouncementResponseStatus { completed, rejected }
+
+class FleetAnnouncement {
+  const FleetAnnouncement({
+    required this.id,
+    required this.message,
+    required this.createdAt,
+    required this.createdByName,
+    this.createdById,
+    this.active = true,
+    this.expiresAt,
+    this.targetDriverId,
+    this.targetDriverName,
+    this.responseStatus,
+    this.respondedAt,
+    this.respondedByName,
+  });
+
+  final String id;
+  final String message;
+  final DateTime createdAt;
+  final String createdByName;
+  final String? createdById;
+  final bool active;
+  final DateTime? expiresAt;
+  final String? targetDriverId;
+  final String? targetDriverName;
+  final AnnouncementResponseStatus? responseStatus;
+  final DateTime? respondedAt;
+  final String? respondedByName;
+
+  bool get isExpired => expiresAt != null && !expiresAt!.isAfter(DateTime.now());
+
+  bool get requiresResponse => targetDriverId != null;
+
+  bool get isPendingResponse => requiresResponse && responseStatus == null;
+
+  bool isVisibleTo(AppUser user) {
+    if (!active || isExpired) return false;
+    if (message.trim().isEmpty) return false;
+    if (user.role == UserRole.admin) return true;
+    if (targetDriverId == null) return true;
+    return targetDriverId == user.id;
+  }
+}

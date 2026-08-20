@@ -14,6 +14,12 @@ service cloud.firestore {
       return isSignedIn() && userDoc().role == 'admin';
     }
 
+    function isOwnFcmTokenUpdate(userId) {
+      return isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmToken', 'fcmTokenUpdatedAt']);
+    }
+
     function vehicleIdentityUnchanged() {
       return request.resource.data.name == resource.data.name
         && request.resource.data.model == resource.data.model
@@ -34,10 +40,24 @@ service cloud.firestore {
         );
     }
 
+    function isExpiredAnnouncement() {
+      return resource.data.expiresAt != null
+        && resource.data.expiresAt <= request.time;
+    }
+
+    function isDriverAnnouncementResponse() {
+      return isSignedIn()
+        && resource.data.targetDriverId == request.auth.uid
+        && resource.data.responseStatus == null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['responseStatus', 'respondedAt', 'respondedByName'])
+        && request.resource.data.responseStatus in ['completed', 'rejected'];
+    }
+
     match /users/{userId} {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       allow create: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() || isOwnFcmTokenUpdate(userId);
+      allow delete: if isAdmin();
     }
 
     match /vehicles/{vehicleId} {
@@ -56,6 +76,13 @@ service cloud.firestore {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == driverId);
       allow create, update: if isSignedIn() && request.auth.uid == driverId;
       allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == driverId);
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || isDriverAnnouncementResponse();
+      allow delete: if isAdmin() || (isSignedIn() && isExpiredAnnouncement());
     }
   }
 }

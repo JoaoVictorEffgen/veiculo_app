@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/router.dart';
 import '../../../../app/theme.dart';
+import '../../../../core/widgets/corporate_ui.dart';
+import '../../../../core/widgets/fleet_announcement_banner.dart';
+import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
 
@@ -27,57 +30,49 @@ class AdminScreen extends ConsumerWidget {
     final moving = vehicles.where((item) => item.status == VehicleStatus.moving).length;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Painel administrativo'),
-        actions: [
-          IconButton(onPressed: () => context.push(AppRoutes.fleetDashboard), icon: const Icon(Icons.insights_outlined), tooltip: 'Dashboard da Frota'),
-          IconButton(onPressed: () => context.push(AppRoutes.tracking), icon: const Icon(Icons.map_outlined), tooltip: 'Mapa GPS'),
-          IconButton(onPressed: () => context.push(AppRoutes.dashboard), icon: const Icon(Icons.directions_car_filled_outlined), tooltip: 'Operar veiculos'),
-          IconButton(onPressed: () => context.push(AppRoutes.history), icon: const Icon(Icons.history), tooltip: 'Historico'),
-          IconButton(
-            onPressed: () async {
-              await ref.read(authControllerProvider.notifier).logout();
-              if (context.mounted) context.go(AppRoutes.login);
-            },
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sair',
-          ),
-        ],
-      ),
+      appBar: const CorporateAppBar(title: 'Menu administrativo'),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
         children: [
-          Text('Visao geral', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          FilledButton.icon(onPressed: () => context.push(AppRoutes.dashboard), icon: const Icon(Icons.directions_car_filled_outlined), label: const Text('OPERAR VEICULOS')),
-          const SizedBox(height: 8),
-          FilledButton.tonalIcon(onPressed: () => context.push(AppRoutes.fleetDashboard), icon: const Icon(Icons.insights_outlined), label: const Text('DASHBOARD DA FROTA')),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(onPressed: () => context.push(AppRoutes.tracking), icon: const Icon(Icons.map_outlined), label: const Text('MAPA GPS / VELOCIDADE')),
-          const SizedBox(height: 16),
+          Text('Gestao da frota', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          const Text('Cadastre, edite e acompanhe veiculos e motoristas.', style: TextStyle(color: AppColors.textSecondary)),
+          const SizedBox(height: 20),
+          FleetAnnouncementEditor(admin: user!),
+          const SizedBox(height: 20),
+          CorporateSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  Expanded(child: ElevatedButton.icon(onPressed: () => _chooseCreate(context, ref, user!), icon: const Icon(Icons.add_circle_outline), label: const Text('CADASTRAR'))),
+                  const SizedBox(width: 12),
+                  Expanded(child: OutlinedButton.icon(onPressed: () => _chooseEdit(context, ref, user!), icon: const Icon(Icons.edit_outlined), label: const Text('EDITAR'))),
+                ]),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(onPressed: () => _chooseDelete(context, ref, user!), icon: const Icon(Icons.delete_outline), label: const Text('EXCLUIR')),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
           Row(children: [
-            Expanded(child: OutlinedButton.icon(onPressed: () => _chooseCreate(context, ref, user!), icon: const Icon(Icons.add_circle_outline), label: const Text('CADASTRAR'))),
-            const SizedBox(width: 12),
-            Expanded(child: OutlinedButton.icon(onPressed: () => _chooseEdit(context, ref, user!), icon: const Icon(Icons.edit_outlined), label: const Text('EDITAR'))),
-          ]),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(onPressed: () => _chooseDelete(context, ref, user!), icon: const Icon(Icons.delete_outline), label: const Text('EXCLUIR')),
-          const SizedBox(height: 24),
-          Row(children: [
-            _SummaryCard(label: 'Veiculos', value: '${vehicles.length}', icon: Icons.local_shipping_outlined),
-            _SummaryCard(label: 'Em uso', value: '$moving', icon: Icons.directions_car_filled, color: AppColors.statusMoving),
-            _SummaryCard(label: 'Motoristas', value: '${drivers.length}', icon: Icons.people_outline),
+            Expanded(child: CorporateMetricTile(label: 'Veiculos', value: '${vehicles.length}', icon: Icons.local_shipping_outlined)),
+            const SizedBox(width: 8),
+            Expanded(child: CorporateMetricTile(label: 'Em uso', value: '$moving', icon: Icons.directions_car_filled, color: AppColors.statusMoving)),
+            const SizedBox(width: 8),
+            Expanded(child: CorporateMetricTile(label: 'Motoristas', value: '${drivers.length}', icon: Icons.people_outline)),
           ]),
           const SizedBox(height: 24),
-          Text('Veiculos cadastrados', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          ...vehicles.map((vehicle) => Card(
+          const CorporateSectionTitle(title: 'Veiculos cadastrados'),
+          const SizedBox(height: 10),
+          ...vehicles.map((vehicle) => CorporateSurface(
+                margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
                   leading: Icon(
                     vehicle.status == VehicleStatus.moving ? Icons.circle : Icons.circle_outlined,
                     color: vehicle.status == VehicleStatus.moving ? AppColors.statusMoving : AppColors.statusStopped,
                   ),
-                  title: Text(vehicle.name),
+                  title: Text(vehicle.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text('${vehicle.model} • ${vehicle.plate}\n${vehicle.currentDriverName ?? 'Disponivel'}${vehicle.stoppedLocation == null ? '' : ' • ${vehicle.stoppedLocation}'}'),
                   isThreeLine: true,
                   trailing: IconButton(
@@ -87,12 +82,12 @@ class AdminScreen extends ConsumerWidget {
                 ),
               )),
           const SizedBox(height: 24),
-          Text('Motoristas cadastrados', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          ...drivers.map((driver) => Card(
+          const CorporateSectionTitle(title: 'Motoristas cadastrados'),
+          ...drivers.map((driver) => CorporateSurface(
+                margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
                   leading: const Icon(Icons.person_outline),
-                  title: Text(driver.name),
+                  title: Text(driver.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: Text(driver.email),
                   trailing: IconButton(
                     icon: const Icon(Icons.edit_outlined),
@@ -373,29 +368,4 @@ class AdminScreen extends ConsumerWidget {
     password.dispose();
     return result;
   }
-}
-
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.label, required this.value, required this.icon, this.color});
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              children: [
-                Icon(icon, color: color ?? AppColors.primary),
-                const SizedBox(height: 6),
-                Text(value, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-              ],
-            ),
-          ),
-        ),
-      );
 }

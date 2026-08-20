@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -134,6 +136,132 @@ class FirebaseVehicleRepository implements VehicleRepository {
             (snapshot) => snapshot.exists ? [_trackFromDoc(snapshot)] : const <DriverTrack>[],
           );
     });
+  }
+
+  @override
+  Stream<List<FleetAnnouncement>> watchAnnouncementsForUser(AppUser user) {
+    return _auth.authStateChanges().asyncExpand((authUser) {
+      if (authUser == null) return Stream.value(const <FleetAnnouncement>[]);
+
+      return _firestore
+          .collection(FirestorePaths.announcements)
+          .where('active', isEqualTo: true)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .asyncMap((snapshot) async {
+        final announcements = snapshot.docs.map(_announcementFromDoc).where((item) => item.isVisibleTo(user)).toList();
+
+        final expiredIds = snapshot.docs
+            .map(_announcementFromDoc)
+            .where((item) => item.isExpired)
+            .map((item) => item.id)
+            .toList();
+        if (expiredIds.isNotEmpty) {
+          unawaited(_deleteExpiredAnnouncements(expiredIds));
+        }
+
+        return announcements.where((item) => !item.isExpired).toList();
+      });
+    });
+  }
+
+  Future<void> _deleteExpiredAnnouncements(List<String> ids) async {
+    for (final id in ids) {
+      try {
+        await _firestore.collection(FirestorePaths.announcements).doc(id).delete();
+      } on FirebaseException catch (error) {
+        debugPrint('Falha ao remover lembrete expirado $id: ${error.message}');
+      }
+    }
+  }
+
+  @override
+  Future<String?> publishAnnouncement(
+    AppUser actor, {
+    required String message,
+    DateTime? expiresAt,
+    String? targetDriverId,
+    String? targetDriverName,
+  }) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem publicar lembretes.';
+    final text = message.trim();
+    if (text.isEmpty) return 'Escreva o lembrete antes de publicar.';
+    if (expiresAt != null && !expiresAt.isAfter(DateTime.now())) {
+      return 'A data de validade precisa ser futura.';
+    }
+
+    try {
+      await _firestore.collection(FirestorePaths.announcements).add({
+        'message': text,
+        'createdAt': FieldValue.serverTimestamp(),
+        'createdById': actor.id,
+        'createdByName': actor.name,
+        'active': true,
+        if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
+        if (targetDriverId != null) 'targetDriverId': targetDriverId,
+        if (targetDriverName != null) 'targetDriverName': targetDriverName,
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao publicar lembrete.';
+    }
+  }
+
+  @override
+  Future<String?> deleteAnnouncement(AppUser actor, String announcementId) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem remover lembretes.';
+
+    try {
+      await _firestore.collection(FirestorePaths.announcements).doc(announcementId).delete();
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao remover lembrete.';
+    }
+  }
+
+  @override
+  Future<String?> respondToAnnouncement(
+    AppUser driver,
+    String announcementId,
+    AnnouncementResponseStatus status,
+  ) async {
+    if (driver.role != UserRole.driver) return 'Somente motoristas podem responder lembretes.';
+
+    try {
+      final doc = await _firestore.collection(FirestorePaths.announcements).doc(announcementId).get();
+      if (!doc.exists) return 'Lembrete nao encontrado.';
+
+      final announcement = _announcementFromDoc(doc);
+      if (announcement.targetDriverId != driver.id) {
+        return 'Este lembrete nao foi destinado a voce.';
+      }
+      if (announcement.responseStatus != null) return 'Voce ja respondeu este lembrete.';
+      if (announcement.isExpired) return 'Este lembrete expirou.';
+
+      await doc.reference.update({
+        'responseStatus': status.name,
+        'respondedAt': FieldValue.serverTimestamp(),
+        'respondedByName': driver.name,
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao responder lembrete.';
+    }
+  }
+
+  @override
+  Future<void> saveFcmToken(AppUser user, String token) async {
+    try {
+      await _firestore.collection(FirestorePaths.users).doc(user.id).set(
+        {
+          'fcmToken': token,
+          'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } on FirebaseException catch (error) {
+      debugPrint('Falha ao salvar token FCM: ${error.message}');
+    }
   }
 
   @override
@@ -499,6 +627,27 @@ class FirebaseVehicleRepository implements VehicleRepository {
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       accuracy: (data['accuracy'] as num?)?.toDouble(),
       heading: (data['heading'] as num?)?.toDouble(),
+    );
+  }
+
+  FleetAnnouncement _announcementFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
+    final responseRaw = data['responseStatus'] as String?;
+    return FleetAnnouncement(
+      id: doc.id,
+      message: data['message'] as String? ?? '',
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdByName: data['createdByName'] as String? ?? 'Administrador',
+      createdById: data['createdById'] as String?,
+      active: data['active'] as bool? ?? true,
+      expiresAt: (data['expiresAt'] as Timestamp?)?.toDate(),
+      targetDriverId: data['targetDriverId'] as String?,
+      targetDriverName: data['targetDriverName'] as String?,
+      responseStatus: responseRaw == null
+          ? null
+          : AnnouncementResponseStatus.values.asNameMap()[responseRaw],
+      respondedAt: (data['respondedAt'] as Timestamp?)?.toDate(),
+      respondedByName: data['respondedByName'] as String?,
     );
   }
 

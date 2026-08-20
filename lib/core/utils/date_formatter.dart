@@ -9,3 +9,8 @@ String formatTime(DateTime? value) {
   if (value == null) return '--';
   return DateFormat('HH:mm').format(value);
 }
+
+String formatDate(DateTime? value) {
+  if (value == null) return '--';
+  return DateFormat('dd/MM/yyyy').format(value);
+}

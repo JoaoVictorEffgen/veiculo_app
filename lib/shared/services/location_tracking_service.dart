@@ -2,10 +2,16 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../firebase/firestore_paths.dart';
 import '../models/app_models.dart';
+
+abstract final class LocationTrackingConfig {
+  static const updateInterval = Duration(seconds: 5);
+  static const distanceFilterMeters = 0;
+}
 
 class LocationTrackingService {
   LocationTrackingService({FirebaseFirestore? firestore}) : _firestore = firestore ?? FirebaseFirestore.instance;
@@ -16,6 +22,8 @@ class LocationTrackingService {
   AppUser? _activeUser;
   Vehicle? _activeVehicle;
   String? _permissionIssue;
+  Position? _lastPosition;
+  DateTime? _lastPositionAt;
 
   bool get isTracking => _subscription != null;
   String? get permissionIssue => _permissionIssue;
@@ -118,6 +126,8 @@ class LocationTrackingService {
     _activeDriverId = null;
     _activeUser = null;
     _activeVehicle = null;
+    _lastPosition = null;
+    _lastPositionAt = null;
 
     if (driverId == null) return;
 
@@ -130,17 +140,18 @@ class LocationTrackingService {
 
   LocationSettings _buildLocationSettings({required String vehicleName}) {
     if (kIsWeb) {
-      return const LocationSettings(
+      return WebSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 15,
+        distanceFilter: LocationTrackingConfig.distanceFilterMeters,
+        timeLimit: LocationTrackingConfig.updateInterval,
       );
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 15,
-        intervalDuration: const Duration(seconds: 15),
+        distanceFilter: LocationTrackingConfig.distanceFilterMeters,
+        intervalDuration: LocationTrackingConfig.updateInterval,
         foregroundNotificationConfig: ForegroundNotificationConfig(
           notificationTitle: 'Corrida em andamento',
           notificationText: 'Rastreando $vehicleName em segundo plano',
@@ -153,18 +164,41 @@ class LocationTrackingService {
 
     if (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS) {
       return AppleSettings(
-        accuracy: LocationAccuracy.high,
+        accuracy: LocationAccuracy.bestForNavigation,
         activityType: ActivityType.automotiveNavigation,
-        distanceFilter: 15,
+        distanceFilter: LocationTrackingConfig.distanceFilterMeters,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
       );
     }
 
-    return const LocationSettings(
+    return LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 15,
+      distanceFilter: LocationTrackingConfig.distanceFilterMeters,
+      timeLimit: LocationTrackingConfig.updateInterval,
     );
+  }
+
+  double _resolveSpeedKmh(Position position) {
+    if (position.speed >= 0) {
+      return position.speed * 3.6;
+    }
+
+    final previous = _lastPosition;
+    final previousAt = _lastPositionAt;
+    if (previous == null || previousAt == null) return 0;
+
+    final elapsedSeconds = position.timestamp.difference(previousAt).inMilliseconds / 1000.0;
+    if (elapsedSeconds <= 0) return 0;
+
+    final meters = Geolocator.distanceBetween(
+      previous.latitude,
+      previous.longitude,
+      position.latitude,
+      position.longitude,
+    );
+
+    return (meters / elapsedSeconds) * 3.6;
   }
 
   Future<void> _publishPosition({required Position position}) async {
@@ -172,7 +206,7 @@ class LocationTrackingService {
     final vehicle = _activeVehicle;
     if (user == null || vehicle == null || _activeDriverId != user.id) return;
 
-    final speedKmh = position.speed >= 0 ? position.speed * 3.6 : 0.0;
+    final speedKmh = _resolveSpeedKmh(position);
 
     await _firestore.collection(FirestorePaths.tracking).doc(user.id).set({
       'driverId': user.id,
@@ -186,9 +220,45 @@ class LocationTrackingService {
       'heading': position.heading,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+
+    _lastPosition = position;
+    _lastPositionAt = position.timestamp;
   }
 
   Future<void> openPermissionSettings() => Geolocator.openAppSettings();
+
+  Future<String?> resolveCurrentLocationLabel() async {
+    try {
+      final granted = await ensurePermission(requireBackground: false);
+      if (!granted) return null;
+
+      final settings = _buildLocationSettings(vehicleName: _activeVehicle?.name ?? 'Veiculo');
+      final position = await Geolocator.getCurrentPosition(locationSettings: settings);
+      return await _formatLocationLabel(position);
+    } catch (error) {
+      debugPrint('GPS: falha ao obter localizacao atual: $error');
+      return null;
+    }
+  }
+
+  Future<String> _formatLocationLabel(Position position) async {
+    try {
+      final places = await placemarkFromCoordinates(position.latitude, position.longitude);
+      if (places.isNotEmpty) {
+        final place = places.first;
+        final parts = <String>[
+          if (place.street != null && place.street!.trim().isNotEmpty) place.street!.trim(),
+          if (place.subLocality != null && place.subLocality!.trim().isNotEmpty) place.subLocality!.trim(),
+          if (place.locality != null && place.locality!.trim().isNotEmpty) place.locality!.trim(),
+        ];
+        if (parts.isNotEmpty) return parts.join(', ');
+      }
+    } catch (error) {
+      debugPrint('GPS: reverse geocoding indisponivel: $error');
+    }
+
+    return '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+  }
 
   void dispose() {
     unawaited(stopTracking());

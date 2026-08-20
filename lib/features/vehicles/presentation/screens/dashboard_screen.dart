@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../../../app/router.dart';
 import '../../../../app/theme.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/widgets/fleet_announcement_banner.dart';
+import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
 
@@ -21,96 +23,74 @@ class DashboardScreen extends ConsumerWidget {
         .where((vehicle) => vehicle.currentDriverId == user?.id && vehicle.status == VehicleStatus.moving)
         .firstOrNull;
     final myTrack = ref.watch(driverTracksProvider).valueOrNull?.where((track) => track.driverId == user?.id).firstOrNull;
+    final isAdmin = user?.role == UserRole.admin;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(user?.role == UserRole.admin ? 'Area administrativa' : 'Veiculos'),
-        actions: [
-          if (user?.role == UserRole.admin) ...[
-            IconButton(onPressed: () => context.push(AppRoutes.fleetDashboard), icon: const Icon(Icons.insights_outlined), tooltip: 'Dashboard da Frota'),
-            IconButton(onPressed: () => context.push(AppRoutes.tracking), icon: const Icon(Icons.map_outlined), tooltip: 'Mapa GPS'),
-            IconButton(onPressed: () => context.push(AppRoutes.admin), icon: const Icon(Icons.admin_panel_settings_outlined), tooltip: 'Administracao'),
-          ],
-          IconButton(onPressed: () => context.push(AppRoutes.history), icon: const Icon(Icons.history), tooltip: 'Historico'),
-          IconButton(
-            onPressed: () async {
-              await ref.read(authControllerProvider.notifier).logout();
-              if (context.mounted) context.go(AppRoutes.login);
-            },
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sair',
-          ),
-        ],
+      appBar: CorporateAppBar(
+        title: isAdmin ? 'Area administrativa' : 'Veiculos',
       ),
       body: RefreshIndicator(
         onRefresh: () async => ref.read(vehicleControllerProvider.notifier).refresh(),
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(12, 16, 12, 24),
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
           children: [
-            Text('Ola, ${user?.name ?? 'motorista'}', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 4),
-            Text('${moving.length} em movimento • ${stopped.length} parados', style: const TextStyle(color: AppColors.textSecondary)),
+            Text(
+              'Ola, ${user?.name ?? 'motorista'}',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${moving.length} em movimento • ${stopped.length} parados',
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            const FleetAnnouncementBanner(),
+            if (isAdmin && user != null) ...[
+              const SizedBox(height: 16),
+              FleetAnnouncementEditor(admin: user),
+            ],
             if (myVehicle != null) ...[
               const SizedBox(height: 16),
-              Card(
-                color: AppColors.statusMovingBg,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.directions_car_filled, color: AppColors.statusMoving),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Voce esta usando', style: TextStyle(color: AppColors.textSecondary)),
-                            Text(myVehicle.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                            Text('Desde ${formatDateTime(myVehicle.startedAt)}'),
-                            if (myTrack != null)
-                              Text(
-                                'Velocidade: ${myTrack.speedKmh.toStringAsFixed(0)} km/h • GPS ativo',
-                                style: const TextStyle(color: AppColors.statusMoving, fontWeight: FontWeight.w600),
-                              )
-                            else
-                              const Text('Aguardando sinal GPS...', style: TextStyle(color: AppColors.textSecondary)),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Voce pode minimizar o app. A corrida continua sendo rastreada pela notificacao "Corrida em andamento".',
-                              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                            ),
-                            if (ref.read(locationTrackingServiceProvider).permissionIssue case final issue?) ...[
-                              const SizedBox(height: 8),
-                              Text(issue, style: const TextStyle(color: AppColors.statusStopped, fontSize: 12)),
-                              TextButton(
-                                onPressed: () => ref.read(locationTrackingServiceProvider).openPermissionSettings(),
-                                child: const Text('Abrir configuracoes'),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _ActiveTripBanner(
+                vehicle: myVehicle,
+                myTrack: myTrack,
+                permissionIssue: ref.read(locationTrackingServiceProvider).permissionIssue,
+                onOpenSettings: () => ref.read(locationTrackingServiceProvider).openPermissionSettings(),
               ),
             ],
-            if (user?.role == UserRole.admin) ...[
-              const SizedBox(height: 16),
-              FilledButton.icon(onPressed: () => context.push(AppRoutes.admin), icon: const Icon(Icons.admin_panel_settings_outlined), label: const Text('ABRIR PAINEL ADMINISTRATIVO')),
-            ],
             const SizedBox(height: 20),
-            _SectionTitle(title: 'EM MOVIMENTO', count: moving.length, color: AppColors.statusMoving),
-            if (moving.isEmpty)
-              const _EmptySection(message: 'Nenhum veiculo em movimento no momento.')
-            else
-              ...moving.map((vehicle) => _VehicleCard(vehicle: vehicle, user: user, ref: ref)),
-            const SizedBox(height: 12),
-            _SectionTitle(title: 'PARADOS / DISPONIVEIS', count: stopped.length, color: AppColors.statusStopped),
-            if (stopped.isEmpty)
-              const _EmptySection(message: 'Nenhum veiculo parado cadastrado.')
-            else
-              ...stopped.map((vehicle) => _VehicleCard(vehicle: vehicle, user: user, ref: ref)),
+            FleetSection(
+              title: 'EM MOVIMENTO',
+              count: moving.length,
+              headerColor: AppColors.statusMoving,
+              children: moving.isEmpty
+                  ? [
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'Nenhum veiculo em movimento no momento.',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ]
+                  : moving.map((vehicle) => _VehicleCard(vehicle: vehicle, user: user, ref: ref)).toList(),
+            ),
+            FleetSection(
+              title: 'PARADOS / DISPONIVEIS',
+              count: stopped.length,
+              headerColor: AppColors.statusStopped,
+              children: stopped.isEmpty
+                  ? [
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                          'Nenhum veiculo parado cadastrado.',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ]
+                  : stopped.map((vehicle) => _VehicleCard(vehicle: vehicle, user: user, ref: ref)).toList(),
+            ),
           ],
         ),
       ),
@@ -118,40 +98,71 @@ class DashboardScreen extends ConsumerWidget {
   }
 }
 
-class _EmptySection extends StatelessWidget {
-  const _EmptySection({required this.message});
-  final String message;
+class _ActiveTripBanner extends StatelessWidget {
+  const _ActiveTripBanner({
+    required this.vehicle,
+    required this.myTrack,
+    required this.permissionIssue,
+    required this.onOpenSettings,
+  });
+
+  final Vehicle vehicle;
+  final DriverTrack? myTrack;
+  final String? permissionIssue;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Text(message, style: const TextStyle(color: AppColors.textSecondary)),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.statusMovingBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.statusMoving.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.directions_car_filled, color: AppColors.statusMoving),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Voce esta usando ${vehicle.name}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.statusMovingDark),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('Desde ${formatDateTime(vehicle.startedAt)}', style: const TextStyle(fontSize: 13)),
+          if (myTrack != null)
+            Text(
+              'Velocidade: ${myTrack!.speedKmh.toStringAsFixed(0)} km/h • GPS ativo',
+              style: const TextStyle(color: AppColors.statusMoving, fontWeight: FontWeight.w600, fontSize: 13),
+            )
+          else
+            const Text('Aguardando sinal GPS...', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+          const SizedBox(height: 8),
+          const Text(
+            'Voce pode minimizar o app. A corrida continua pela notificacao "Corrida em andamento".',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+          if (permissionIssue != null) ...[
+            const SizedBox(height: 8),
+            Text(permissionIssue!, style: const TextStyle(color: AppColors.statusStopped, fontSize: 12)),
+            TextButton(onPressed: onOpenSettings, child: const Text('Abrir configuracoes')),
+          ],
+        ],
+      ),
     );
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, required this.count, required this.color});
-  final String title;
-  final int count;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
-        child: Row(children: [
-          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 8),
-          Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-          const Spacer(),
-          Text('$count'),
-        ]),
-      );
-}
-
 class _VehicleCard extends StatelessWidget {
   const _VehicleCard({required this.vehicle, required this.user, required this.ref});
+
   final Vehicle vehicle;
   final AppUser? user;
   final WidgetRef ref;
@@ -165,30 +176,56 @@ class _VehicleCard extends StatelessWidget {
           (item) => item.currentDriverId == user?.id && item.status == VehicleStatus.moving && item.id != vehicle.id,
         );
 
-    return Card(
-      color: isMine ? AppColors.statusMovingBg : AppColors.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(child: Text(vehicle.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold))),
-            Text(vehicle.plate, style: const TextStyle(color: AppColors.textSecondary)),
-          ]),
-          const SizedBox(height: 4),
-          Text(vehicle.model, style: const TextStyle(color: AppColors.textSecondary)),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isMine ? AppColors.statusMovingBg.withOpacity(0.35) : AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isMine ? AppColors.statusMoving.withOpacity(0.3) : AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  vehicle.name,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              Text(
+                vehicle.plate,
+                style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(vehicle.model, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
           const SizedBox(height: 12),
-          Row(children: [
-            Icon(isMoving ? Icons.circle : Icons.circle_outlined, color: color, size: 16),
-            const SizedBox(width: 8),
-            Text(isMoving ? 'EM MOVIMENTO' : 'PARADO', style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-          ]),
-          const SizedBox(height: 8),
-          Text('Motorista: ${vehicle.currentDriverName ?? 'Nenhum'}'),
+          Row(
+            children: [
+              Icon(Icons.circle, size: 10, color: color),
+              const SizedBox(width: 8),
+              Text(
+                isMoving ? 'EM MOVIMENTO' : 'PARADO',
+                style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13, letterSpacing: 0.3),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          FleetInfoRow(
+            icon: Icons.person_outline,
+            label: 'Motorista',
+            value: vehicle.currentDriverName ?? 'Nenhum',
+          ),
           if (isMoving)
-            Text('Inicio: ${formatDateTime(vehicle.startedAt)}')
+            FleetInfoRow(icon: Icons.access_time, label: 'Inicio', value: formatDateTime(vehicle.startedAt))
           else ...[
-            Text('Local: ${vehicle.stoppedLocation ?? 'Nao informado'}'),
-            if (vehicle.stoppedAt != null) Text('Parado desde: ${formatTime(vehicle.stoppedAt)}'),
+            FleetInfoRow(icon: Icons.place_outlined, label: 'Local', value: vehicle.stoppedLocation ?? 'Nao informado'),
+            if (vehicle.stoppedAt != null)
+              FleetInfoRow(icon: Icons.schedule, label: 'Parado desde', value: formatTime(vehicle.stoppedAt)),
           ],
           const SizedBox(height: 14),
           if (isMoving && isMine)
@@ -196,16 +233,10 @@ class _VehicleCard extends StatelessWidget {
           else if (!isMoving && !alreadyUsingAnother)
             ElevatedButton.icon(onPressed: () => _confirmStart(context), icon: const Icon(Icons.play_circle_outline), label: const Text('INICIAR / ON'))
           else if (!isMoving && alreadyUsingAnother)
-            const Text(
-              'Voce ja esta usando outro veiculo.',
-              style: TextStyle(color: AppColors.textSecondary),
-            )
+            const Text('Voce ja esta usando outro veiculo.', style: TextStyle(color: AppColors.textSecondary, fontSize: 13))
           else if (isMoving)
-            const Text(
-              'Veiculo indisponivel para outro motorista.',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-        ]),
+            const Text('Veiculo indisponivel para outro motorista.', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+        ],
       ),
     );
   }
@@ -230,7 +261,41 @@ class _VehicleCard extends StatelessWidget {
   }
 
   Future<void> _stop(BuildContext context) async {
-    final controller = TextEditingController();
+    if (!context.mounted) return;
+
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Expanded(child: Text('Obtendo localizacao atual...')),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    String? detected;
+    try {
+      detected = await ref
+          .read(locationTrackingServiceProvider)
+          .resolveCurrentLocationLabel()
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {
+      detected = null;
+    } finally {
+      if (context.mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    }
+
+    if (!context.mounted) return;
+
+    final controller = TextEditingController(text: detected ?? '');
     final location = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -244,7 +309,13 @@ class _VehicleCard extends StatelessWidget {
             TextField(
               controller: controller,
               autofocus: true,
-              decoration: const InputDecoration(labelText: 'Local onde foi deixado'),
+              decoration: InputDecoration(
+                labelText: 'Local onde foi deixado',
+                helperText: detected == null
+                    ? 'Nao foi possivel detectar automaticamente. Informe o local.'
+                    : 'Local detectado pelo GPS. Voce pode editar se necessario.',
+                prefixIcon: const Icon(Icons.place_outlined),
+              ),
             ),
           ],
         ),

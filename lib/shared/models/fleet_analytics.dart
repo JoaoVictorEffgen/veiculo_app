@@ -66,26 +66,6 @@ class FleetPeriodSelection {
   }
 }
 
-class FleetSummary {
-  const FleetSummary({
-    required this.totalVehicles,
-    required this.movingVehicles,
-    required this.stoppedVehicles,
-    required this.availableVehicles,
-    required this.totalDrivers,
-    required this.utilizationRate,
-    required this.availabilityRate,
-  });
-
-  final int totalVehicles;
-  final int movingVehicles;
-  final int stoppedVehicles;
-  final int availableVehicles;
-  final int totalDrivers;
-  final double utilizationRate;
-  final double availabilityRate;
-}
-
 class NamedCount {
   const NamedCount({required this.id, required this.name, required this.count});
   final String id;
@@ -93,72 +73,25 @@ class NamedCount {
   final int count;
 }
 
-class VehicleTimeShare {
-  const VehicleTimeShare({
-    required this.vehicleId,
-    required this.vehicleName,
-    required this.movingPercent,
-    required this.stoppedPercent,
-    required this.movingDuration,
-    required this.stoppedDuration,
-  });
-
-  final String vehicleId;
-  final String vehicleName;
-  final double movingPercent;
-  final double stoppedPercent;
-  final Duration movingDuration;
-  final Duration stoppedDuration;
+class NamedDuration {
+  const NamedDuration({required this.id, required this.name, required this.duration});
+  final String id;
+  final String name;
+  final Duration duration;
 }
-
-class TimeSeriesPoint {
-  const TimeSeriesPoint({required this.label, required this.count});
-  final String label;
-  final int count;
-}
-
-class FleetHighlights {
-  const FleetHighlights({
-    this.mostUsedVehicle,
-    this.leastUsedVehicle,
-    this.topDriver,
-    required this.averageTripDuration,
-    required this.averageStoppedDuration,
-  });
-
-  final NamedCount? mostUsedVehicle;
-  final NamedCount? leastUsedVehicle;
-  final NamedCount? topDriver;
-  final Duration averageTripDuration;
-  final Duration averageStoppedDuration;
-}
-
-class FleetAlert {
-  const FleetAlert({required this.message, required this.level});
-  final String message;
-  final FleetAlertLevel level;
-}
-
-enum FleetAlertLevel { info, warning }
 
 class FleetAnalyticsReport {
   const FleetAnalyticsReport({
     required this.period,
-    required this.summary,
     required this.utilizationByVehicle,
-    required this.utilizationByDriver,
-    required this.timeShareByVehicle,
-    required this.movementsOverTime,
-    required this.highlights,
-    required this.alerts,
+    required this.movingTimeByDriver,
+    required this.topVehicle,
+    required this.topDriver,
   });
 
   final DateTimeRange period;
-  final FleetSummary summary;
   final List<NamedCount> utilizationByVehicle;
-  final List<NamedCount> utilizationByDriver;
-  final List<VehicleTimeShare> timeShareByVehicle;
-  final List<TimeSeriesPoint> movementsOverTime;
-  final FleetHighlights highlights;
-  final List<FleetAlert> alerts;
+  final List<NamedDuration> movingTimeByDriver;
+  final NamedCount? topVehicle;
+  final NamedDuration? topDriver;
 }

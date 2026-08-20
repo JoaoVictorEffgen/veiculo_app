@@ -13,6 +13,22 @@ abstract class VehicleRepository {
   Stream<List<AppUser>> watchUsers();
   Stream<List<DriverTrack>> watchDriverTracks();
 
+  Stream<List<FleetAnnouncement>> watchAnnouncementsForUser(AppUser user);
+  Future<String?> publishAnnouncement(
+    AppUser actor, {
+    required String message,
+    DateTime? expiresAt,
+    String? targetDriverId,
+    String? targetDriverName,
+  });
+  Future<String?> deleteAnnouncement(AppUser actor, String announcementId);
+  Future<String?> respondToAnnouncement(
+    AppUser driver,
+    String announcementId,
+    AnnouncementResponseStatus status,
+  );
+  Future<void> saveFcmToken(AppUser user, String token);
+
   Future<String?> startVehicle(String vehicleId, AppUser user);
   Future<String?> stopVehicle(String vehicleId, AppUser user, String location);
 

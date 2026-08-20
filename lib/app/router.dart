@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/widgets/main_app_shell.dart';
 import '../core/widgets/splash_screen.dart';
 import '../features/admin/presentation/screens/fleet_dashboard_screen.dart';
 import '../features/admin/presentation/screens/admin_screen.dart';
 import '../features/admin/presentation/screens/tracking_screen.dart';
+import '../features/alerts/presentation/screens/alerts_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/history/presentation/screens/history_screen.dart';
 import '../features/vehicles/presentation/screens/dashboard_screen.dart';
@@ -23,6 +25,7 @@ class AppRoutes {
   static const admin = '/admin';
   static const tracking = '/tracking';
   static const fleetDashboard = '/fleet-dashboard';
+  static const alerts = '/alerts';
 }
 
 class RouterNotifier extends ChangeNotifier {
@@ -50,7 +53,7 @@ String? resolveRedirect(GoRouterState state, AuthSession session) {
 
   if (location == AppRoutes.splash) {
     if (user == null) return AppRoutes.login;
-    return user.role == UserRole.admin ? AppRoutes.admin : AppRoutes.dashboard;
+    return AppRoutes.dashboard;
   }
 
   if (user == null && location != AppRoutes.login) {
@@ -58,7 +61,7 @@ String? resolveRedirect(GoRouterState state, AuthSession session) {
   }
 
   if (user != null && location == AppRoutes.login) {
-    return user.role == UserRole.admin ? AppRoutes.admin : AppRoutes.dashboard;
+    return AppRoutes.dashboard;
   }
 
   if (location == AppRoutes.admin && user?.role != UserRole.admin) {
@@ -70,6 +73,10 @@ String? resolveRedirect(GoRouterState state, AuthSession session) {
   }
 
   if (location == AppRoutes.fleetDashboard && user?.role != UserRole.admin) {
+    return AppRoutes.dashboard;
+  }
+
+  if (location == AppRoutes.alerts && user?.role != UserRole.admin) {
     return AppRoutes.dashboard;
   }
 
@@ -92,25 +99,34 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.login,
         builder: (context, state) => const LoginScreen(),
       ),
-      GoRoute(
-        path: AppRoutes.dashboard,
-        builder: (context, state) => const DashboardScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.history,
-        builder: (context, state) => const HistoryScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.admin,
-        builder: (context, state) => const AdminScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.tracking,
-        builder: (context, state) => const TrackingScreen(),
-      ),
-      GoRoute(
-        path: AppRoutes.fleetDashboard,
-        builder: (context, state) => const FleetDashboardScreen(),
+      ShellRoute(
+        builder: (context, state, child) => MainAppShell(child: child),
+        routes: [
+          GoRoute(
+            path: AppRoutes.dashboard,
+            builder: (context, state) => const DashboardScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.history,
+            builder: (context, state) => const HistoryScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.admin,
+            builder: (context, state) => const AdminScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.tracking,
+            builder: (context, state) => const TrackingScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.fleetDashboard,
+            builder: (context, state) => const FleetDashboardScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.alerts,
+            builder: (context, state) => const AlertsScreen(),
+          ),
+        ],
       ),
     ],
   );

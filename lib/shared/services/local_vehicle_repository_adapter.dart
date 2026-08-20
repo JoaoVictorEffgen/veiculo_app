@@ -79,6 +79,33 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   Stream<List<DriverTrack>> watchDriverTracks() => Stream.value(const []);
 
   @override
+  Stream<List<FleetAnnouncement>> watchAnnouncementsForUser(AppUser user) => Stream.value(const []);
+
+  @override
+  Future<String?> publishAnnouncement(
+    AppUser actor, {
+    required String message,
+    DateTime? expiresAt,
+    String? targetDriverId,
+    String? targetDriverName,
+  }) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
+  Future<String?> deleteAnnouncement(AppUser actor, String announcementId) async => 'Disponivel apenas com Firebase.';
+
+  @override
+  Future<String?> respondToAnnouncement(
+    AppUser driver,
+    String announcementId,
+    AnnouncementResponseStatus status,
+  ) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
+  Future<void> saveFcmToken(AppUser user, String token) async {}
+
+  @override
   Future<String?> startVehicle(String vehicleId, AppUser user) async {
     try {
       _local.startVehicle(vehicleId, user);

@@ -1,7 +1,7 @@
 name: vehicle_control_app
 description: "Aplicativo interno de controle de veículos e motoristas."
 publish_to: 'none'
-version: 0.1.0
+version: 0.2.0
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -20,6 +20,8 @@ dependencies:
   firebase_core: ^3.3.0
   firebase_auth: ^5.1.4
   cloud_firestore: ^5.2.1
+  firebase_messaging: ^15.1.3
+  flutter_local_notifications: ^18.0.1
 
   # Persistência local / fila offline
   drift: ^2.19.1
@@ -33,6 +35,7 @@ dependencies:
 
   # GPS e mapa (OpenStreetMap — gratis, sem API key)
   geolocator: ^13.0.4
+  geocoding: ^3.0.0
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
 

@@ -157,6 +157,13 @@ final driverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
   return ref.watch(repositoryProvider).watchDriverTracks();
 });
 
+final fleetAnnouncementsProvider = StreamProvider<List<FleetAnnouncement>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null) return Stream.value(const []);
+  ref.watch(adminControllerProvider);
+  return ref.watch(repositoryProvider).watchAnnouncementsForUser(user);
+});
+
 final fleetPeriodProvider = StateProvider<FleetPeriodSelection>(
   (ref) => const FleetPeriodSelection(preset: FleetPeriodPreset.last30Days),
 );
