@@ -74,6 +74,19 @@ class DashboardScreen extends ConsumerWidget {
                               )
                             else
                               const Text('Aguardando sinal GPS...', style: TextStyle(color: AppColors.textSecondary)),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Voce pode minimizar o app. A corrida continua sendo rastreada pela notificacao "Corrida em andamento".',
+                              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                            ),
+                            if (ref.read(locationTrackingServiceProvider).permissionIssue case final issue?) ...[
+                              const SizedBox(height: 8),
+                              Text(issue, style: const TextStyle(color: AppColors.statusStopped, fontSize: 12)),
+                              TextButton(
+                                onPressed: () => ref.read(locationTrackingServiceProvider).openPermissionSettings(),
+                                child: const Text('Abrir configuracoes'),
+                              ),
+                            ],
                           ],
                         ),
                       ),

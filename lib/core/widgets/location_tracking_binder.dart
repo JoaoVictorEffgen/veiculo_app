@@ -12,18 +12,32 @@ class LocationTrackingBinder extends ConsumerStatefulWidget {
   ConsumerState<LocationTrackingBinder> createState() => _LocationTrackingBinderState();
 }
 
-class _LocationTrackingBinderState extends ConsumerState<LocationTrackingBinder> {
+class _LocationTrackingBinderState extends ConsumerState<LocationTrackingBinder> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed || state == AppLifecycleState.paused) {
+      _sync();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen(authControllerProvider, (_, __) => _sync());
     ref.listen(vehicleControllerProvider, (_, __) => _sync());
     return widget.child;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
   }
 
   Future<void> _sync() async {
