@@ -16,3 +16,5 @@ web/.last_build_id
 *.iml
 .idea/
 .vscode/
+functions/node_modules/
+functions/lib/

@@ -8,6 +8,7 @@ import 'app/app.dart';
 import 'firebase_options.dart';
 import 'shared/services/app_providers.dart';
 import 'shared/services/firebase_vehicle_repository.dart';
+import 'shared/services/location_tracking_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,12 +21,14 @@ Future<void> main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   final repository = FirebaseVehicleRepository();
+  final locationTrackingService = LocationTrackingService();
 
   runApp(
     ProviderScope(
       overrides: [
         repositoryProvider.overrideWithValue(repository),
         authControllerProvider.overrideWith((ref) => AuthController(repository)),
+        locationTrackingServiceProvider.overrideWithValue(locationTrackingService),
       ],
       child: const VehicleControlApp(),
     ),

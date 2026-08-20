@@ -56,10 +56,27 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   Future<List<Vehicle>> fetchVehicles() async => _local.vehicles;
 
   @override
-  Stream<List<Movement>> watchMovements() => _movementsController.stream;
+  Stream<List<Movement>> watchMovements() {
+    return _movementsController.stream.map((movements) {
+      final user = _local.currentUser;
+      if (user == null) return const <Movement>[];
+      if (user.role == UserRole.admin) return movements;
+      return movements.where((movement) => movement.driverId == user.id).toList();
+    });
+  }
 
   @override
-  Stream<List<AppUser>> watchUsers() => _usersController.stream;
+  Stream<List<AppUser>> watchUsers() {
+    return _usersController.stream.map((users) {
+      final user = _local.currentUser;
+      if (user == null) return const <AppUser>[];
+      if (user.role == UserRole.admin) return users;
+      return users.where((item) => item.id == user.id).toList();
+    });
+  }
+
+  @override
+  Stream<List<DriverTrack>> watchDriverTracks() => Stream.value(const []);
 
   @override
   Future<String?> startVehicle(String vehicleId, AppUser user) async {

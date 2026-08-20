@@ -92,3 +92,29 @@ class Movement {
   final DateTime createdAt;
   final String? location;
 }
+
+class DriverTrack {
+  const DriverTrack({
+    required this.driverId,
+    required this.driverName,
+    required this.vehicleId,
+    required this.vehicleName,
+    required this.latitude,
+    required this.longitude,
+    required this.speedKmh,
+    required this.updatedAt,
+    this.accuracy,
+    this.heading,
+  });
+
+  final String driverId;
+  final String driverName;
+  final String vehicleId;
+  final String vehicleName;
+  final double latitude;
+  final double longitude;
+  final double speedKmh;
+  final DateTime updatedAt;
+  final double? accuracy;
+  final double? heading;
+}

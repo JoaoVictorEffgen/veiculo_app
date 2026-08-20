@@ -7,6 +7,7 @@ import 'package:vehicle_control_app/shared/database/app_database.dart';
 import 'package:vehicle_control_app/shared/services/app_providers.dart';
 import 'package:vehicle_control_app/shared/services/local_vehicle_repository.dart';
 import 'package:vehicle_control_app/shared/services/local_vehicle_repository_adapter.dart';
+import 'package:vehicle_control_app/shared/services/location_tracking_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +24,7 @@ void main() {
         overrides: [
           repositoryProvider.overrideWithValue(repository),
           authControllerProvider.overrideWith((ref) => AuthController(repository)),
+          locationTrackingServiceProvider.overrideWithValue(LocationTrackingService()),
         ],
         child: const VehicleControlApp(),
       ),

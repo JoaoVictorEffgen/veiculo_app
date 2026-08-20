@@ -20,6 +20,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Widget build(BuildContext context) {
     final movementsAsync = ref.watch(movementsProvider);
     final vehicles = ref.watch(vehicleControllerProvider);
+    final user = ref.watch(authControllerProvider).user;
 
     return movementsAsync.when(
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -30,7 +31,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             : movements.where((movement) => movement.vehicleId == _vehicleFilter).toList();
 
         return Scaffold(
-          appBar: AppBar(title: const Text('Historico')),
+          appBar: AppBar(title: Text(user?.role == UserRole.admin ? 'Historico da frota' : 'Meu historico')),
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

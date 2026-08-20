@@ -80,20 +80,58 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<Movement>> watchMovements() {
-    return _auth.authStateChanges().asyncExpand((user) {
-      if (user == null) return Stream.value(const <Movement>[]);
-      return _firestore.collection(FirestorePaths.movements).orderBy('createdAt', descending: true).snapshots().map(
-            (snapshot) => snapshot.docs.map(_movementFromDoc).toList(),
-          );
+    return _auth.authStateChanges().asyncExpand((user) async* {
+      if (user == null) {
+        yield const <Movement>[];
+        return;
+      }
+      final appUser = _cachedUser ?? await _loadAppUser(user.uid);
+      final query = appUser?.role == UserRole.admin
+          ? _firestore.collection(FirestorePaths.movements).orderBy('createdAt', descending: true)
+          : _firestore
+              .collection(FirestorePaths.movements)
+              .where('driverId', isEqualTo: user.uid)
+              .orderBy('createdAt', descending: true);
+      yield* query.snapshots().map((snapshot) => snapshot.docs.map(_movementFromDoc).toList());
     });
   }
 
   @override
   Stream<List<AppUser>> watchUsers() {
-    return _auth.authStateChanges().asyncExpand((user) {
-      if (user == null) return Stream.value(const <AppUser>[]);
-      return _firestore.collection(FirestorePaths.users).orderBy('name').snapshots().map(
-            (snapshot) => snapshot.docs.map(_userFromDoc).toList(),
+    return _auth.authStateChanges().asyncExpand((user) async* {
+      if (user == null) {
+        yield const <AppUser>[];
+        return;
+      }
+      final appUser = _cachedUser ?? await _loadAppUser(user.uid);
+      if (appUser?.role == UserRole.admin) {
+        yield* _firestore.collection(FirestorePaths.users).orderBy('name').snapshots().map(
+              (snapshot) => snapshot.docs.map(_userFromDoc).toList(),
+            );
+        return;
+      }
+      yield* _firestore.collection(FirestorePaths.users).doc(user.uid).snapshots().map(
+            (snapshot) => snapshot.exists ? [_userFromDoc(snapshot)] : const <AppUser>[],
+          );
+    });
+  }
+
+  @override
+  Stream<List<DriverTrack>> watchDriverTracks() {
+    return _auth.authStateChanges().asyncExpand((user) async* {
+      if (user == null) {
+        yield const <DriverTrack>[];
+        return;
+      }
+      final appUser = _cachedUser ?? await _loadAppUser(user.uid);
+      if (appUser?.role == UserRole.admin) {
+        yield* _firestore.collection(FirestorePaths.tracking).snapshots().map(
+              (snapshot) => snapshot.docs.map(_trackFromDoc).toList(),
+            );
+        return;
+      }
+      yield* _firestore.collection(FirestorePaths.tracking).doc(user.uid).snapshots().map(
+            (snapshot) => snapshot.exists ? [_trackFromDoc(snapshot)] : const <DriverTrack>[],
           );
     });
   }
@@ -445,6 +483,22 @@ class FirebaseVehicleRepository implements VehicleRepository {
       action: MovementAction.values.byName(data['action'] as String),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       location: data['location'] as String?,
+    );
+  }
+
+  DriverTrack _trackFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
+    return DriverTrack(
+      driverId: data['driverId'] as String,
+      driverName: data['driverName'] as String,
+      vehicleId: data['vehicleId'] as String,
+      vehicleName: data['vehicleName'] as String,
+      latitude: (data['latitude'] as num).toDouble(),
+      longitude: (data['longitude'] as num).toDouble(),
+      speedKmh: (data['speedKmh'] as num).toDouble(),
+      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+      accuracy: (data['accuracy'] as num?)?.toDouble(),
+      heading: (data['heading'] as num?)?.toDouble(),
     );
   }
 

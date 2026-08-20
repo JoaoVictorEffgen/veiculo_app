@@ -20,13 +20,17 @@ class DashboardScreen extends ConsumerWidget {
     final myVehicle = vehicles
         .where((vehicle) => vehicle.currentDriverId == user?.id && vehicle.status == VehicleStatus.moving)
         .firstOrNull;
+    final myTrack = ref.watch(driverTracksProvider).valueOrNull?.where((track) => track.driverId == user?.id).firstOrNull;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(user?.role == UserRole.admin ? 'Area administrativa' : 'Veiculos'),
         actions: [
-          if (user?.role == UserRole.admin)
+          if (user?.role == UserRole.admin) ...[
+            IconButton(onPressed: () => context.push(AppRoutes.fleetDashboard), icon: const Icon(Icons.insights_outlined), tooltip: 'Dashboard da Frota'),
+            IconButton(onPressed: () => context.push(AppRoutes.tracking), icon: const Icon(Icons.map_outlined), tooltip: 'Mapa GPS'),
             IconButton(onPressed: () => context.push(AppRoutes.admin), icon: const Icon(Icons.admin_panel_settings_outlined), tooltip: 'Administracao'),
+          ],
           IconButton(onPressed: () => context.push(AppRoutes.history), icon: const Icon(Icons.history), tooltip: 'Historico'),
           IconButton(
             onPressed: () async {
@@ -63,6 +67,13 @@ class DashboardScreen extends ConsumerWidget {
                             const Text('Voce esta usando', style: TextStyle(color: AppColors.textSecondary)),
                             Text(myVehicle.name, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                             Text('Desde ${formatDateTime(myVehicle.startedAt)}'),
+                            if (myTrack != null)
+                              Text(
+                                'Velocidade: ${myTrack.speedKmh.toStringAsFixed(0)} km/h • GPS ativo',
+                                style: const TextStyle(color: AppColors.statusMoving, fontWeight: FontWeight.w600),
+                              )
+                            else
+                              const Text('Aguardando sinal GPS...', style: TextStyle(color: AppColors.textSecondary)),
                           ],
                         ),
                       ),

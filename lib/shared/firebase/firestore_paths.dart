@@ -4,4 +4,5 @@ class FirestorePaths {
   static const users = 'users';
   static const vehicles = 'vehicles';
   static const movements = 'movements';
+  static const tracking = 'tracking';
 }

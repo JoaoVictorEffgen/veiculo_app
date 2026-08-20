@@ -11,6 +11,7 @@ abstract class VehicleRepository {
   Future<List<Vehicle>> fetchVehicles();
   Stream<List<Movement>> watchMovements();
   Stream<List<AppUser>> watchUsers();
+  Stream<List<DriverTrack>> watchDriverTracks();
 
   Future<String?> startVehicle(String vehicleId, AppUser user);
   Future<String?> stopVehicle(String vehicleId, AppUser user, String location);

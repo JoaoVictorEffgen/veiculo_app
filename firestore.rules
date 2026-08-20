@@ -35,7 +35,7 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isSignedIn();
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       allow create: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       allow update, delete: if isAdmin();
     }
@@ -47,9 +47,15 @@ service cloud.firestore {
     }
 
     match /movements/{movementId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
+      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.driverId == request.auth.uid;
       allow update, delete: if isAdmin();
+    }
+
+    match /tracking/{driverId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == driverId);
+      allow create, update: if isSignedIn() && request.auth.uid == driverId;
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == driverId);
     }
   }
 }

@@ -5,10 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/app_models.dart';
 import '../models/auth_session.dart';
+import '../models/fleet_analytics.dart';
+import 'fleet_analytics_service.dart';
+import 'location_tracking_service.dart';
 import 'vehicle_repository.dart';
 
 final repositoryProvider = Provider<VehicleRepository>((ref) {
   throw UnimplementedError('repositoryProvider must be overridden in main.dart');
+});
+
+final locationTrackingServiceProvider = Provider<LocationTrackingService>((ref) {
+  throw UnimplementedError('locationTrackingServiceProvider must be overridden in main.dart');
 });
 
 class AuthController extends StateNotifier<AuthSession> {
@@ -144,4 +151,45 @@ final movementsProvider = StreamProvider<List<Movement>>((ref) {
 final usersProvider = StreamProvider<List<AppUser>>((ref) {
   ref.watch(adminControllerProvider);
   return ref.watch(repositoryProvider).watchUsers();
+});
+
+final driverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
+  return ref.watch(repositoryProvider).watchDriverTracks();
+});
+
+final fleetPeriodProvider = StateProvider<FleetPeriodSelection>(
+  (ref) => const FleetPeriodSelection(preset: FleetPeriodPreset.last30Days),
+);
+
+final fleetAnalyticsServiceProvider = Provider<FleetAnalyticsService>((ref) => FleetAnalyticsService());
+
+final fleetAnalyticsProvider = Provider<AsyncValue<FleetAnalyticsReport>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user?.role != UserRole.admin) {
+    return AsyncValue.error(StateError('Acesso negado'), StackTrace.current);
+  }
+
+  final period = ref.watch(fleetPeriodProvider);
+  final movementsAsync = ref.watch(movementsProvider);
+  final vehicles = ref.watch(vehicleControllerProvider);
+  final usersAsync = ref.watch(usersProvider);
+
+  if (movementsAsync.isLoading || usersAsync.isLoading) {
+    return const AsyncValue.loading();
+  }
+  if (movementsAsync.hasError) {
+    return AsyncValue.error(movementsAsync.error!, movementsAsync.stackTrace ?? StackTrace.empty);
+  }
+  if (usersAsync.hasError) {
+    return AsyncValue.error(usersAsync.error!, usersAsync.stackTrace ?? StackTrace.empty);
+  }
+
+  final drivers = usersAsync.valueOrNull?.where((item) => item.role == UserRole.driver).toList() ?? [];
+  final report = ref.read(fleetAnalyticsServiceProvider).compute(
+        movements: movementsAsync.valueOrNull ?? const [],
+        vehicles: vehicles,
+        drivers: drivers,
+        periodSelection: period,
+      );
+  return AsyncValue.data(report);
 });

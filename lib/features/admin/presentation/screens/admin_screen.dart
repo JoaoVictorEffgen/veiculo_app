@@ -30,6 +30,8 @@ class AdminScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Painel administrativo'),
         actions: [
+          IconButton(onPressed: () => context.push(AppRoutes.fleetDashboard), icon: const Icon(Icons.insights_outlined), tooltip: 'Dashboard da Frota'),
+          IconButton(onPressed: () => context.push(AppRoutes.tracking), icon: const Icon(Icons.map_outlined), tooltip: 'Mapa GPS'),
           IconButton(onPressed: () => context.push(AppRoutes.dashboard), icon: const Icon(Icons.directions_car_filled_outlined), tooltip: 'Operar veiculos'),
           IconButton(onPressed: () => context.push(AppRoutes.history), icon: const Icon(Icons.history), tooltip: 'Historico'),
           IconButton(
@@ -48,6 +50,10 @@ class AdminScreen extends ConsumerWidget {
           Text('Visao geral', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
           FilledButton.icon(onPressed: () => context.push(AppRoutes.dashboard), icon: const Icon(Icons.directions_car_filled_outlined), label: const Text('OPERAR VEICULOS')),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(onPressed: () => context.push(AppRoutes.fleetDashboard), icon: const Icon(Icons.insights_outlined), label: const Text('DASHBOARD DA FROTA')),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(onPressed: () => context.push(AppRoutes.tracking), icon: const Icon(Icons.map_outlined), label: const Text('MAPA GPS / VELOCIDADE')),
           const SizedBox(height: 16),
           Row(children: [
             Expanded(child: OutlinedButton.icon(onPressed: () => _chooseCreate(context, ref, user!), icon: const Icon(Icons.add_circle_outline), label: const Text('CADASTRAR'))),

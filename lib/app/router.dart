@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/widgets/splash_screen.dart';
+import '../features/admin/presentation/screens/fleet_dashboard_screen.dart';
 import '../features/admin/presentation/screens/admin_screen.dart';
+import '../features/admin/presentation/screens/tracking_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/history/presentation/screens/history_screen.dart';
 import '../features/vehicles/presentation/screens/dashboard_screen.dart';
@@ -19,6 +21,8 @@ class AppRoutes {
   static const dashboard = '/dashboard';
   static const history = '/history';
   static const admin = '/admin';
+  static const tracking = '/tracking';
+  static const fleetDashboard = '/fleet-dashboard';
 }
 
 class RouterNotifier extends ChangeNotifier {
@@ -61,6 +65,14 @@ String? resolveRedirect(GoRouterState state, AuthSession session) {
     return AppRoutes.dashboard;
   }
 
+  if (location == AppRoutes.tracking && user?.role != UserRole.admin) {
+    return AppRoutes.dashboard;
+  }
+
+  if (location == AppRoutes.fleetDashboard && user?.role != UserRole.admin) {
+    return AppRoutes.dashboard;
+  }
+
   return null;
 }
 
@@ -91,6 +103,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.admin,
         builder: (context, state) => const AdminScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.tracking,
+        builder: (context, state) => const TrackingScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.fleetDashboard,
+        builder: (context, state) => const FleetDashboardScreen(),
       ),
     ],
   );
