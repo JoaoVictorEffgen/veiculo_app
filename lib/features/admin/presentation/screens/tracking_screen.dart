@@ -11,12 +11,26 @@ import '../../../../core/utils/date_formatter.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
 
-class TrackingScreen extends ConsumerWidget {
+class TrackingScreen extends ConsumerStatefulWidget {
   const TrackingScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TrackingScreen> createState() => _TrackingScreenState();
+}
+
+class _TrackingScreenState extends ConsumerState<TrackingScreen> {
+  final _mapController = MapController();
+
+  @override
+  Widget build(BuildContext context) {
     final tracksAsync = ref.watch(driverTracksProvider);
+
+    ref.listen<AsyncValue<List<DriverTrack>>>(driverTracksProvider, (previous, next) {
+      final tracks = next.valueOrNull;
+      if (tracks == null || tracks.isEmpty) return;
+      final primary = tracks.first;
+      _mapController.move(LatLng(primary.latitude, primary.longitude), _mapController.camera.zoom);
+    });
 
     return AdminOnlyGate(
       child: Scaffold(
@@ -51,6 +65,7 @@ class TrackingScreen extends ConsumerWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: FlutterMap(
+                        mapController: _mapController,
                         options: MapOptions(
                           initialCenter: center,
                           initialZoom: 13,
@@ -74,23 +89,23 @@ class TrackingScreen extends ConsumerWidget {
                                     child: Column(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(8),
-                                          boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26)],
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(8),
+                                            boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26)],
+                                          ),
+                                          child: Text(
+                                            '${track.driverName}\n${track.speedKmh.toStringAsFixed(0)} km/h',
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
                                         ),
-                                        child: Text(
-                                          '${track.driverName}\n${track.speedKmh.toStringAsFixed(0)} km/h',
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                      const Icon(Icons.location_on, color: AppColors.statusMoving, size: 32),
-                                    ],
+                                        const Icon(Icons.location_on, color: AppColors.statusMoving, size: 32),
+                                      ],
+                                    ),
                                   ),
-                                ),
                                 ),
                             ],
                           ),

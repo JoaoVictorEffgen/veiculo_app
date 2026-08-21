@@ -223,9 +223,14 @@ class FirebaseVehicleRepository implements VehicleRepository {
   Future<String?> respondToAnnouncement(
     AppUser driver,
     String announcementId,
-    AnnouncementResponseStatus status,
-  ) async {
+    AnnouncementResponseStatus status, {
+    String? rejectionReason,
+  }) async {
     if (driver.role != UserRole.driver) return 'Somente motoristas podem responder lembretes.';
+    if (status == AnnouncementResponseStatus.rejected &&
+        (rejectionReason == null || rejectionReason.trim().isEmpty)) {
+      return 'Informe a justificativa para recusar o lembrete.';
+    }
 
     try {
       final doc = await _firestore.collection(FirestorePaths.announcements).doc(announcementId).get();
@@ -238,15 +243,65 @@ class FirebaseVehicleRepository implements VehicleRepository {
       if (announcement.responseStatus != null) return 'Voce ja respondeu este lembrete.';
       if (announcement.isExpired) return 'Este lembrete expirou.';
 
-      await doc.reference.update({
+      final batch = _firestore.batch();
+      batch.update(doc.reference, {
         'responseStatus': status.name,
         'respondedAt': FieldValue.serverTimestamp(),
         'respondedByName': driver.name,
+        'active': false,
+        if (status == AnnouncementResponseStatus.rejected) 'rejectionReason': rejectionReason!.trim(),
       });
+
+      final alertRef = _firestore.collection(FirestorePaths.adminAlerts).doc();
+      batch.set(alertRef, {
+        'announcementId': announcementId,
+        'driverId': driver.id,
+        'driverName': driver.name,
+        'message': announcement.message,
+        'responseStatus': status.name,
+        if (status == AnnouncementResponseStatus.rejected) 'rejectionReason': rejectionReason!.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'viewed': false,
+      });
+
+      await batch.commit();
       return null;
     } on FirebaseException catch (error) {
       return error.message ?? 'Erro ao responder lembrete.';
     }
+  }
+
+  @override
+  Stream<List<FleetAdminAlert>> watchAdminAlerts() {
+    return _auth.authStateChanges().asyncExpand((user) {
+      if (user == null) return Stream.value(const <FleetAdminAlert>[]);
+      return _firestore
+          .collection(FirestorePaths.adminAlerts)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .map((snapshot) => snapshot.docs.map(_adminAlertFromDoc).toList());
+    });
+  }
+
+  @override
+  Future<void> markAdminAlertsViewed(AppUser admin) async {
+    if (admin.role != UserRole.admin) return;
+
+    final unread = await _firestore
+        .collection(FirestorePaths.adminAlerts)
+        .where('viewed', isEqualTo: false)
+        .get();
+
+    if (unread.docs.isEmpty) return;
+
+    final batch = _firestore.batch();
+    for (final doc in unread.docs) {
+      batch.update(doc.reference, {
+        'viewed': true,
+        'viewedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
   }
 
   @override
@@ -262,6 +317,97 @@ class FirebaseVehicleRepository implements VehicleRepository {
     } on FirebaseException catch (error) {
       debugPrint('Falha ao salvar token FCM: ${error.message}');
     }
+  }
+
+  @override
+  Future<VehicleChecklist?> getTodayChecklist(AppUser driver, String vehicleId) async {
+    if (driver.role != UserRole.driver) return null;
+
+    final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicleId);
+    final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
+
+    try {
+      final cached = await docRef
+          .get(const GetOptions(source: Source.cache))
+          .timeout(const Duration(milliseconds: 400));
+      if (cached.exists) return _checklistFromDoc(cached);
+    } catch (_) {}
+
+    try {
+      final remote = await docRef.get().timeout(const Duration(seconds: 4));
+      if (remote.exists) return _checklistFromDoc(remote);
+    } catch (error) {
+      debugPrint('getTodayChecklist: $error');
+    }
+    return null;
+  }
+
+  @override
+  Stream<List<VehicleChecklist>> watchTodayChecklistsForDriver(AppUser driver) {
+    if (driver.role != UserRole.driver) return Stream.value(const <VehicleChecklist>[]);
+
+    return _firestore
+        .collection(FirestorePaths.vehicleChecklists)
+        .where('driverId', isEqualTo: driver.id)
+        .where('checklistDate', isEqualTo: checklistDateKey())
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map(_checklistFromDoc).toList());
+  }
+
+  @override
+  Future<String?> saveVehicleChecklist(
+    AppUser driver,
+    Vehicle vehicle, {
+    required Map<String, bool> items,
+    String? notes,
+  }) async {
+    if (driver.role != UserRole.driver) return 'Somente motoristas podem registrar checklist.';
+
+    final incomplete = VehicleChecklistConfig.items.where((item) => items[item.id] != true);
+    if (incomplete.isNotEmpty) return 'Marque todos os itens do checklist antes de continuar.';
+
+    final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicle.id);
+    final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
+    final itemMap = {for (final item in VehicleChecklistConfig.items) item.id: items[item.id] == true};
+
+    try {
+      final existing = await docRef.get(const GetOptions(source: Source.serverAndCache));
+      if (existing.exists) return 'Checklist deste veiculo ja foi feito hoje.';
+
+      await docRef.set({
+        'driverId': driver.id,
+        'driverName': driver.name,
+        'vehicleId': vehicle.id,
+        'vehicleName': vehicle.name,
+        'vehiclePlate': vehicle.plate,
+        'vehicleModel': vehicle.model,
+        'checklistDate': checklistDateKey(),
+        'items': itemMap,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        'completedAt': FieldValue.serverTimestamp(),
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao salvar checklist.';
+    } catch (error) {
+      return 'Erro ao salvar checklist: $error';
+    }
+  }
+
+  @override
+  Stream<List<VehicleChecklist>> watchVehicleChecklists(AppUser user) {
+    return _auth.authStateChanges().asyncExpand((authUser) {
+      if (authUser == null) return Stream.value(const <VehicleChecklist>[]);
+
+      final query = user.role == UserRole.admin
+          ? _firestore.collection(FirestorePaths.vehicleChecklists).orderBy('completedAt', descending: true)
+          : _firestore
+              .collection(FirestorePaths.vehicleChecklists)
+              .where('driverId', isEqualTo: user.id)
+              .orderBy('completedAt', descending: true);
+
+      return query.snapshots().map((snapshot) => snapshot.docs.map(_checklistFromDoc).toList());
+    });
   }
 
   @override
@@ -648,6 +794,42 @@ class FirebaseVehicleRepository implements VehicleRepository {
           : AnnouncementResponseStatus.values.asNameMap()[responseRaw],
       respondedAt: (data['respondedAt'] as Timestamp?)?.toDate(),
       respondedByName: data['respondedByName'] as String?,
+      rejectionReason: data['rejectionReason'] as String?,
+    );
+  }
+
+  FleetAdminAlert _adminAlertFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
+    return FleetAdminAlert(
+      id: doc.id,
+      announcementId: data['announcementId'] as String? ?? '',
+      driverId: data['driverId'] as String? ?? '',
+      driverName: data['driverName'] as String? ?? 'Motorista',
+      message: data['message'] as String? ?? '',
+      responseStatus: AnnouncementResponseStatus.values.byName(data['responseStatus'] as String),
+      rejectionReason: data['rejectionReason'] as String?,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      viewed: data['viewed'] as bool? ?? false,
+      viewedAt: (data['viewedAt'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  VehicleChecklist _checklistFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
+    final rawItems = data['items'] as Map<String, dynamic>? ?? {};
+    return VehicleChecklist(
+      id: doc.id,
+      driverId: data['driverId'] as String? ?? '',
+      driverName: data['driverName'] as String? ?? 'Motorista',
+      vehicleId: data['vehicleId'] as String? ?? '',
+      vehicleName: data['vehicleName'] as String? ?? '',
+      vehiclePlate: data['vehiclePlate'] as String? ?? '',
+      vehicleModel: data['vehicleModel'] as String? ?? '',
+      checklistDate: data['checklistDate'] as String? ?? checklistDateKey(),
+      items: rawItems.map((key, value) => MapEntry(key, value == true)),
+      completedAt: (data['completedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      notes: data['notes'] as String?,
+      photoUrls: (data['photoUrls'] as List<dynamic>? ?? const []).map((item) => item.toString()).toList(),
     );
   }
 

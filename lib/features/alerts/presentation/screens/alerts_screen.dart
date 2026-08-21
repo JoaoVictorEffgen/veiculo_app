@@ -9,13 +9,38 @@ import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
 
-class AlertsScreen extends ConsumerWidget {
+class AlertsScreen extends ConsumerStatefulWidget {
   const AlertsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AlertsScreen> createState() => _AlertsScreenState();
+}
+
+class _AlertsScreenState extends ConsumerState<AlertsScreen> {
+  var _markedViewed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _markAlertsViewed());
+  }
+
+  Future<void> _markAlertsViewed() async {
+    if (_markedViewed) return;
+    final admin = ref.read(authControllerProvider).user;
+    if (admin?.role != UserRole.admin) return;
+    _markedViewed = true;
+    await ref.read(repositoryProvider).markAdminAlertsViewed(admin!);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(adminAlertsProvider, (_, __) {
+      if (!_markedViewed) _markAlertsViewed();
+    });
+
     final vehicles = ref.watch(vehicleControllerProvider);
-    final announcements = ref.watch(fleetAnnouncementsProvider).valueOrNull ?? const <FleetAnnouncement>[];
+    final adminAlerts = ref.watch(adminAlertsProvider).valueOrNull ?? const <FleetAdminAlert>[];
     final now = DateTime.now();
 
     final idleVehicles = vehicles.where((vehicle) {
@@ -23,8 +48,7 @@ class AlertsScreen extends ConsumerWidget {
       return now.difference(vehicle.stoppedAt!).inHours >= 24;
     }).toList();
 
-    final pendingResponses = announcements.where((item) => item.isPendingResponse).toList();
-    final hasAlerts = idleVehicles.isNotEmpty || pendingResponses.isNotEmpty;
+    final hasAlerts = idleVehicles.isNotEmpty || adminAlerts.isNotEmpty;
 
     return AdminOnlyGate(
       child: Scaffold(
@@ -35,7 +59,7 @@ class AlertsScreen extends ConsumerWidget {
             CorporatePageHeader(
               title: 'Alertas administrativos',
               subtitle: hasAlerts
-                  ? 'Itens que precisam de atencao.'
+                  ? 'Respostas de lembretes e veiculos que precisam de atencao.'
                   : 'Nenhum alerta ativo no momento.',
             ),
             const SizedBox(height: 16),
@@ -44,18 +68,9 @@ class AlertsScreen extends ConsumerWidget {
                 icon: Icons.check_circle_outline,
                 message: 'Nenhum alerta relevante no momento.',
               ),
-            if (pendingResponses.isNotEmpty) ...[
-              const CorporateSectionTitle(title: 'Lembretes aguardando resposta'),
-              ...pendingResponses.map(
-                (announcement) => CorporateSurface(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    leading: const Icon(Icons.pending_actions, color: AppColors.primary),
-                    title: Text(announcement.targetDriverName ?? 'Motorista'),
-                    subtitle: Text(announcement.message),
-                  ),
-                ),
-              ),
+            if (adminAlerts.isNotEmpty) ...[
+              const CorporateSectionTitle(title: 'Respostas de lembretes'),
+              ...adminAlerts.map((alert) => _AdminAlertCard(alert: alert)),
               const SizedBox(height: 16),
             ],
             if (idleVehicles.isNotEmpty) ...[
@@ -75,6 +90,98 @@ class AlertsScreen extends ConsumerWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AdminAlertCard extends StatelessWidget {
+  const _AdminAlertCard({required this.alert});
+
+  final FleetAdminAlert alert;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCompleted = alert.responseStatus == AnnouncementResponseStatus.completed;
+    final icon = isCompleted ? Icons.check_circle : Icons.cancel;
+    final iconColor = isCompleted ? AppColors.statusMoving : AppColors.statusStopped;
+    final statusLabel = isCompleted ? 'Concluido' : 'Recusado';
+
+    return CorporateSurface(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: (isCompleted ? AppColors.statusMovingBg : AppColors.statusStopped.withValues(alpha: 0.12)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: iconColor),
+              ),
+              if (!alert.viewed)
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      color: AppColors.statusStopped,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$statusLabel • ${alert.driverName}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                Text(alert.message, style: const TextStyle(fontSize: 14, height: 1.35)),
+                if (alert.isRejected && alert.rejectionReason != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Justificativa',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(alert.rejectionReason!, style: const TextStyle(fontSize: 13, height: 1.35)),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Text(
+                  formatDateTime(alert.createdAt),
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

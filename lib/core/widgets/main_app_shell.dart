@@ -17,7 +17,7 @@ class MainAppShell extends ConsumerWidget {
     if (location.startsWith(AppRoutes.tracking)) return 1;
     if (location.startsWith(AppRoutes.dashboard)) return 2;
     if (location.startsWith(AppRoutes.alerts)) return 3;
-    if (location.startsWith(AppRoutes.admin) || location.startsWith(AppRoutes.history)) return 4;
+    if (location.startsWith(AppRoutes.admin) || location.startsWith(AppRoutes.history) || location.startsWith(AppRoutes.checklists)) return 4;
     return 2;
   }
 
@@ -27,12 +27,14 @@ class MainAppShell extends ConsumerWidget {
     final isAdmin = user?.role == UserRole.admin;
     final location = GoRouterState.of(context).matchedLocation;
     final selected = _selectedIndex(location, isAdmin);
+    final unreadAlerts = isAdmin ? ref.watch(unreadAdminAlertsCountProvider) : 0;
 
     return Scaffold(
       body: child,
       bottomNavigationBar: isAdmin
           ? _AdminBottomNav(
               selectedIndex: selected,
+              unreadAlerts: unreadAlerts,
               onTap: (index) => _onAdminTap(context, index),
             )
           : _DriverBottomNav(
@@ -60,9 +62,14 @@ class MainAppShell extends ConsumerWidget {
 }
 
 class _AdminBottomNav extends StatelessWidget {
-  const _AdminBottomNav({required this.selectedIndex, required this.onTap});
+  const _AdminBottomNav({
+    required this.selectedIndex,
+    required this.unreadAlerts,
+    required this.onTap,
+  });
 
   final int selectedIndex;
+  final int unreadAlerts;
   final ValueChanged<int> onTap;
 
   @override
@@ -104,6 +111,7 @@ class _AdminBottomNav extends StatelessWidget {
                 selectedIcon: Icons.notifications,
                 label: 'Alertas',
                 selected: selectedIndex == 3,
+                badgeCount: unreadAlerts,
                 onTap: () => onTap(3),
               ),
               _NavItem(
@@ -175,6 +183,7 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   final IconData icon;
@@ -182,6 +191,7 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +204,30 @@ class _NavItem extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(selected ? selectedIcon : icon, color: color, size: 22),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(selected ? selectedIcon : icon, color: color, size: 22),
+                  if (badgeCount > 0)
+                    Positioned(
+                      right: -6,
+                      top: -4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        decoration: const BoxDecoration(
+                          color: AppColors.statusStopped,
+                          borderRadius: BorderRadius.all(Radius.circular(8)),
+                        ),
+                        child: Text(
+                          badgeCount > 9 ? '9+' : '$badgeCount',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 4),
               Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: selected ? FontWeight.w600 : FontWeight.w500)),
             ],

@@ -7,6 +7,7 @@ import '../../../../app/theme.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/fleet_announcement_banner.dart';
 import '../../../../core/widgets/main_app_shell.dart';
+import '../../../../core/widgets/vehicle_checklist_sheet.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
 
@@ -24,6 +25,9 @@ class DashboardScreen extends ConsumerWidget {
         .firstOrNull;
     final myTrack = ref.watch(driverTracksProvider).valueOrNull?.where((track) => track.driverId == user?.id).firstOrNull;
     final isAdmin = user?.role == UserRole.admin;
+    if (user?.role == UserRole.driver) {
+      ref.watch(driverTodayChecklistsProvider);
+    }
 
     return Scaffold(
       appBar: CorporateAppBar(
@@ -242,11 +246,19 @@ class _VehicleCard extends StatelessWidget {
   }
 
   Future<void> _confirmStart(BuildContext context) async {
+    final driver = user;
+    if (driver == null) return;
+
+    if (driver.role != UserRole.admin) {
+      await _confirmStartWithChecklist(context, driver);
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Confirmar inicio'),
-        content: Text('Deseja iniciar o uso do veiculo ${vehicle.name}?\n\nMotorista: ${user!.name}'),
+        content: Text('Deseja iniciar o uso do veiculo ${vehicle.name}?\n\nMotorista: ${driver.name}'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
           ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('INICIAR / ON')),
@@ -254,7 +266,61 @@ class _VehicleCard extends StatelessWidget {
       ),
     );
     if (confirmed != true || !context.mounted) return;
-    final error = await ref.read(vehicleControllerProvider.notifier).start(vehicle.id, user!);
+    final error = await ref.read(vehicleControllerProvider.notifier).start(vehicle.id, driver);
+    if (error != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  Future<void> _confirmStartWithChecklist(BuildContext context, AppUser driver) async {
+    var todayChecklist = todayChecklistForVehicle(ref, vehicle.id);
+
+    if (todayChecklist == null) {
+      final completed = await VehicleChecklistSheet.show(
+        context,
+        driver: driver,
+        vehicle: vehicle,
+      );
+      if (completed == null || !context.mounted) return;
+      todayChecklist = completed;
+    } else {
+      final action = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Checklist ja feito hoje'),
+          content: Text(
+            'Voce ja concluiu o checklist do ${vehicle.name} hoje.\n\n'
+            'Deseja iniciar a corrida ou baixar/compartilhar o PDF?',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+            TextButton(onPressed: () => Navigator.pop(context, 'pdf'), child: const Text('Ver PDF')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, 'start'), child: const Text('INICIAR / ON')),
+          ],
+        ),
+      );
+      if (!context.mounted) return;
+      if (action == 'pdf') {
+        await showChecklistPdfOptions(context, todayChecklist);
+        return;
+      }
+      if (action != 'start') return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar inicio'),
+        content: Text('Deseja iniciar o uso do veiculo ${vehicle.name}?\n\nMotorista: ${driver.name}'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('INICIAR / ON')),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final error = await ref.read(vehicleControllerProvider.notifier).start(vehicle.id, driver);
     if (error != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
     }

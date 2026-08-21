@@ -11,6 +11,8 @@ import '../models/app_models.dart';
 abstract final class LocationTrackingConfig {
   static const updateInterval = Duration(seconds: 5);
   static const distanceFilterMeters = 0;
+  static const staleAfter = Duration(seconds: 20);
+  static const watchdogInterval = Duration(seconds: 10);
 }
 
 class LocationTrackingService {
@@ -18,12 +20,14 @@ class LocationTrackingService {
 
   final FirebaseFirestore _firestore;
   StreamSubscription<Position>? _subscription;
+  Timer? _watchdogTimer;
   String? _activeDriverId;
   AppUser? _activeUser;
   Vehicle? _activeVehicle;
   String? _permissionIssue;
   Position? _lastPosition;
   DateTime? _lastPositionAt;
+  DateTime? _lastPublishAt;
 
   bool get isTracking => _subscription != null;
   String? get permissionIssue => _permissionIssue;
@@ -84,8 +88,8 @@ class LocationTrackingService {
     await startTracking(user: user, vehicle: activeVehicle);
   }
 
-  Future<void> startTracking({required AppUser user, required Vehicle vehicle}) async {
-    if (_activeDriverId == user.id && _subscription != null) {
+  Future<void> startTracking({required AppUser user, required Vehicle vehicle, bool forceRestart = false}) async {
+    if (!forceRestart && _activeDriverId == user.id && _subscription != null) {
       _activeUser = user;
       _activeVehicle = vehicle;
       return;
@@ -102,13 +106,20 @@ class LocationTrackingService {
     _activeDriverId = user.id;
     _activeUser = user;
     _activeVehicle = vehicle;
+    _lastPublishAt = null;
 
     final settings = _buildLocationSettings(vehicleName: vehicle.name);
 
     _subscription = Geolocator.getPositionStream(locationSettings: settings).listen(
       (position) => unawaited(_publishPosition(position: position)),
-      onError: (Object error) => debugPrint('GPS stream error: $error'),
+      onError: (Object error) {
+        debugPrint('GPS stream error: $error');
+        unawaited(_restartStream());
+      },
+      cancelOnError: false,
     );
+
+    _startWatchdog();
 
     try {
       final current = await Geolocator.getCurrentPosition(locationSettings: settings);
@@ -118,7 +129,36 @@ class LocationTrackingService {
     }
   }
 
+  void _startWatchdog() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer.periodic(LocationTrackingConfig.watchdogInterval, (_) {
+      unawaited(_checkStreamHealth());
+    });
+  }
+
+  Future<void> _checkStreamHealth() async {
+    if (_subscription == null || _activeUser == null || _activeVehicle == null) return;
+
+    final lastPublish = _lastPublishAt;
+    if (lastPublish != null &&
+        DateTime.now().difference(lastPublish) <= LocationTrackingConfig.staleAfter) {
+      return;
+    }
+
+    debugPrint('GPS: stream sem atualizacao recente, reiniciando...');
+    await _restartStream();
+  }
+
+  Future<void> _restartStream() async {
+    final user = _activeUser;
+    final vehicle = _activeVehicle;
+    if (user == null || vehicle == null) return;
+    await startTracking(user: user, vehicle: vehicle, forceRestart: true);
+  }
+
   Future<void> stopTracking() async {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
     await _subscription?.cancel();
     _subscription = null;
 
@@ -128,6 +168,7 @@ class LocationTrackingService {
     _activeVehicle = null;
     _lastPosition = null;
     _lastPositionAt = null;
+    _lastPublishAt = null;
 
     if (driverId == null) return;
 
@@ -143,13 +184,12 @@ class LocationTrackingService {
       return WebSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: LocationTrackingConfig.distanceFilterMeters,
-        timeLimit: LocationTrackingConfig.updateInterval,
       );
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
-        accuracy: LocationAccuracy.high,
+        accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: LocationTrackingConfig.distanceFilterMeters,
         intervalDuration: LocationTrackingConfig.updateInterval,
         foregroundNotificationConfig: ForegroundNotificationConfig(
@@ -175,30 +215,32 @@ class LocationTrackingService {
     return LocationSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: LocationTrackingConfig.distanceFilterMeters,
-      timeLimit: LocationTrackingConfig.updateInterval,
     );
   }
 
   double _resolveSpeedKmh(Position position) {
+    final previous = _lastPosition;
+    final previousAt = _lastPositionAt;
+
+    if (previous != null && previousAt != null) {
+      final elapsedSeconds = position.timestamp.difference(previousAt).inMilliseconds / 1000.0;
+      if (elapsedSeconds > 0) {
+        final meters = Geolocator.distanceBetween(
+          previous.latitude,
+          previous.longitude,
+          position.latitude,
+          position.longitude,
+        );
+        final derived = (meters / elapsedSeconds) * 3.6;
+        if (derived > 0) return derived;
+      }
+    }
+
     if (position.speed >= 0) {
       return position.speed * 3.6;
     }
 
-    final previous = _lastPosition;
-    final previousAt = _lastPositionAt;
-    if (previous == null || previousAt == null) return 0;
-
-    final elapsedSeconds = position.timestamp.difference(previousAt).inMilliseconds / 1000.0;
-    if (elapsedSeconds <= 0) return 0;
-
-    final meters = Geolocator.distanceBetween(
-      previous.latitude,
-      previous.longitude,
-      position.latitude,
-      position.longitude,
-    );
-
-    return (meters / elapsedSeconds) * 3.6;
+    return 0;
   }
 
   Future<void> _publishPosition({required Position position}) async {
@@ -208,18 +250,23 @@ class LocationTrackingService {
 
     final speedKmh = _resolveSpeedKmh(position);
 
-    await _firestore.collection(FirestorePaths.tracking).doc(user.id).set({
-      'driverId': user.id,
-      'driverName': user.name,
-      'vehicleId': vehicle.id,
-      'vehicleName': vehicle.name,
-      'latitude': position.latitude,
-      'longitude': position.longitude,
-      'speedKmh': double.parse(speedKmh.toStringAsFixed(1)),
-      'accuracy': position.accuracy,
-      'heading': position.heading,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      await _firestore.collection(FirestorePaths.tracking).doc(user.id).set({
+        'driverId': user.id,
+        'driverName': user.name,
+        'vehicleId': vehicle.id,
+        'vehicleName': vehicle.name,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'speedKmh': double.parse(speedKmh.toStringAsFixed(1)),
+        'accuracy': position.accuracy,
+        'heading': position.heading,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      _lastPublishAt = DateTime.now();
+    } catch (error) {
+      debugPrint('GPS: falha ao publicar posicao: $error');
+    }
 
     _lastPosition = position;
     _lastPositionAt = position.timestamp;

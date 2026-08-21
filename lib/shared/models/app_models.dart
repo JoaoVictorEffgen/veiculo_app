@@ -135,6 +135,7 @@ class FleetAnnouncement {
     this.responseStatus,
     this.respondedAt,
     this.respondedByName,
+    this.rejectionReason,
   });
 
   final String id;
@@ -149,18 +150,118 @@ class FleetAnnouncement {
   final AnnouncementResponseStatus? responseStatus;
   final DateTime? respondedAt;
   final String? respondedByName;
+  final String? rejectionReason;
 
   bool get isExpired => expiresAt != null && !expiresAt!.isAfter(DateTime.now());
 
   bool get requiresResponse => targetDriverId != null;
 
-  bool get isPendingResponse => requiresResponse && responseStatus == null;
+  bool get isPendingResponse => requiresResponse && responseStatus == null && active;
 
   bool isVisibleTo(AppUser user) {
-    if (!active || isExpired) return false;
+    if (isExpired) return false;
     if (message.trim().isEmpty) return false;
-    if (user.role == UserRole.admin) return true;
+    if (user.role == UserRole.admin) return active;
+    if (!active) return false;
     if (targetDriverId == null) return true;
-    return targetDriverId == user.id;
+    return targetDriverId == user.id && isPendingResponse;
   }
 }
+
+class FleetAdminAlert {
+  const FleetAdminAlert({
+    required this.id,
+    required this.announcementId,
+    required this.driverId,
+    required this.driverName,
+    required this.message,
+    required this.responseStatus,
+    required this.createdAt,
+    this.rejectionReason,
+    this.viewed = false,
+    this.viewedAt,
+  });
+
+  final String id;
+  final String announcementId;
+  final String driverId;
+  final String driverName;
+  final String message;
+  final AnnouncementResponseStatus responseStatus;
+  final String? rejectionReason;
+  final DateTime createdAt;
+  final bool viewed;
+  final DateTime? viewedAt;
+
+  bool get isRejected => responseStatus == AnnouncementResponseStatus.rejected;
+}
+
+class VehicleChecklistItemDef {
+  const VehicleChecklistItemDef({required this.id, required this.label});
+
+  final String id;
+  final String label;
+}
+
+abstract final class VehicleChecklistConfig {
+  static const items = <VehicleChecklistItemDef>[
+    VehicleChecklistItemDef(id: 'documentacao', label: 'Documentacao do veiculo (CRLV)'),
+    VehicleChecklistItemDef(id: 'pneus', label: 'Pneus (calibragem e desgaste)'),
+    VehicleChecklistItemDef(id: 'freios', label: 'Freios e pedal'),
+    VehicleChecklistItemDef(id: 'luzes', label: 'Luzes, setas e farois'),
+    VehicleChecklistItemDef(id: 'oleo', label: 'Nivel de oleo do motor'),
+    VehicleChecklistItemDef(id: 'agua', label: 'Agua do radiador'),
+    VehicleChecklistItemDef(id: 'espelhos', label: 'Espelhos retrovisores'),
+    VehicleChecklistItemDef(id: 'limpador', label: 'Limpador de para-brisa'),
+    VehicleChecklistItemDef(id: 'combustivel', label: 'Combustivel suficiente'),
+    VehicleChecklistItemDef(id: 'extintor', label: 'Extintor e triangulo'),
+    VehicleChecklistItemDef(id: 'carroceria', label: 'Carroceria sem avarias aparentes'),
+  ];
+}
+
+class VehicleChecklist {
+  const VehicleChecklist({
+    required this.id,
+    required this.driverId,
+    required this.driverName,
+    required this.vehicleId,
+    required this.vehicleName,
+    required this.vehiclePlate,
+    required this.vehicleModel,
+    required this.checklistDate,
+    required this.items,
+    required this.completedAt,
+    this.notes,
+    this.photoUrls = const [],
+  });
+
+  final String id;
+  final String driverId;
+  final String driverName;
+  final String vehicleId;
+  final String vehicleName;
+  final String vehiclePlate;
+  final String vehicleModel;
+  final String checklistDate;
+  final Map<String, bool> items;
+  final DateTime completedAt;
+  final String? notes;
+  final List<String> photoUrls;
+
+  bool get isComplete => VehicleChecklistConfig.items.every((item) => items[item.id] == true);
+  bool get hasPhotos => photoUrls.isNotEmpty;
+}
+
+String checklistDateKey([DateTime? date]) {
+  final value = date ?? DateTime.now();
+  final month = value.month.toString().padLeft(2, '0');
+  final day = value.day.toString().padLeft(2, '0');
+  return '${value.year}-$month-$day';
+}
+
+String vehicleChecklistDocId({
+  required String driverId,
+  required String vehicleId,
+  DateTime? date,
+}) =>
+    '${driverId}_${vehicleId}_${checklistDateKey(date)}';

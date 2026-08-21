@@ -6,4 +6,6 @@ class FirestorePaths {
   static const movements = 'movements';
   static const tracking = 'tracking';
   static const announcements = 'announcements';
+  static const adminAlerts = 'admin_alerts';
+  static const vehicleChecklists = 'vehicle_checklists';
 }

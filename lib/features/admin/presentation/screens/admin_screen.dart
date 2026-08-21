@@ -44,6 +44,25 @@ class AdminScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const CorporateSectionTitle(title: 'Checklists da frota'),
+                const Text(
+                  'Historico de inspecoes feitas pelos motoristas antes de iniciar a corrida.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: () => context.go(AppRoutes.checklists),
+                  icon: const Icon(Icons.checklist_rtl),
+                  label: const Text('VER HISTORICO DE CHECKLISTS'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          CorporateSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Row(children: [
                   Expanded(child: ElevatedButton.icon(onPressed: () => _chooseCreate(context, ref, user!), icon: const Icon(Icons.add_circle_outline), label: const Text('CADASTRAR'))),
                   const SizedBox(width: 12),

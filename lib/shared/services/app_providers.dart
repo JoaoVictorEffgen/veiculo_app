@@ -164,6 +164,38 @@ final fleetAnnouncementsProvider = StreamProvider<List<FleetAnnouncement>>((ref)
   return ref.watch(repositoryProvider).watchAnnouncementsForUser(user);
 });
 
+final adminAlertsProvider = StreamProvider<List<FleetAdminAlert>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user?.role != UserRole.admin) return Stream.value(const []);
+  return ref.watch(repositoryProvider).watchAdminAlerts();
+});
+
+final unreadAdminAlertsCountProvider = Provider<int>((ref) {
+  final alerts = ref.watch(adminAlertsProvider).valueOrNull ?? const <FleetAdminAlert>[];
+  return alerts.where((alert) => !alert.viewed).length;
+});
+
+final vehicleChecklistsProvider = StreamProvider<List<VehicleChecklist>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null) return Stream.value(const []);
+  return ref.watch(repositoryProvider).watchVehicleChecklists(user);
+});
+
+final driverTodayChecklistsProvider = StreamProvider<List<VehicleChecklist>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null || user.role != UserRole.driver) return Stream.value(const []);
+  return ref.watch(repositoryProvider).watchTodayChecklistsForDriver(user);
+});
+
+VehicleChecklist? todayChecklistForVehicle(WidgetRef ref, String vehicleId) {
+  final checklists = ref.watch(driverTodayChecklistsProvider).valueOrNull;
+  if (checklists == null) return null;
+  for (final checklist in checklists) {
+    if (checklist.vehicleId == vehicleId) return checklist;
+  }
+  return null;
+}
+
 final fleetPeriodProvider = StateProvider<FleetPeriodSelection>(
   (ref) => const FleetPeriodSelection(preset: FleetPeriodPreset.last30Days),
 );

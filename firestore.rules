@@ -49,7 +49,24 @@ service cloud.firestore {
       return isSignedIn()
         && resource.data.targetDriverId == request.auth.uid
         && resource.data.responseStatus == null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['responseStatus', 'respondedAt', 'respondedByName'])
+        && request.resource.data.active == false
+        && request.resource.data.responseStatus in ['completed', 'rejected']
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['responseStatus', 'respondedAt', 'respondedByName', 'rejectionReason', 'active'])
+        && (
+          request.resource.data.responseStatus == 'completed'
+          || (
+            request.resource.data.responseStatus == 'rejected'
+            && request.resource.data.rejectionReason is string
+            && request.resource.data.rejectionReason.size() > 0
+          )
+        );
+    }
+
+    function isDriverAdminAlertCreate() {
+      return isSignedIn()
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.viewed == false
         && request.resource.data.responseStatus in ['completed', 'rejected'];
     }
 
@@ -83,6 +100,20 @@ service cloud.firestore {
       allow create: if isAdmin();
       allow update: if isAdmin() || isDriverAnnouncementResponse();
       allow delete: if isAdmin() || (isSignedIn() && isExpiredAnnouncement());
+    }
+
+    match /admin_alerts/{alertId} {
+      allow read: if isAdmin();
+      allow create: if isDriverAdminAlertCreate();
+      allow update, delete: if isAdmin();
+    }
+
+    match /vehicle_checklists/{checklistId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.checklistDate is string;
+      allow update, delete: if isAdmin();
     }
   }
 }

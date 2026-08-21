@@ -25,11 +25,24 @@ abstract class VehicleRepository {
   Future<String?> respondToAnnouncement(
     AppUser driver,
     String announcementId,
-    AnnouncementResponseStatus status,
-  );
+    AnnouncementResponseStatus status, {
+    String? rejectionReason,
+  });
+  Stream<List<FleetAdminAlert>> watchAdminAlerts();
+  Future<void> markAdminAlertsViewed(AppUser admin);
   Future<void> saveFcmToken(AppUser user, String token);
 
   Future<String?> startVehicle(String vehicleId, AppUser user);
+
+  Future<VehicleChecklist?> getTodayChecklist(AppUser driver, String vehicleId);
+  Future<String?> saveVehicleChecklist(
+    AppUser driver,
+    Vehicle vehicle, {
+    required Map<String, bool> items,
+    String? notes,
+  });
+  Stream<List<VehicleChecklist>> watchTodayChecklistsForDriver(AppUser driver);
+  Stream<List<VehicleChecklist>> watchVehicleChecklists(AppUser user);
   Future<String?> stopVehicle(String vehicleId, AppUser user, String location);
 
   Future<String?> addVehicle(AppUser actor, {required String name, required String model, required String plate});

@@ -98,12 +98,37 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   Future<String?> respondToAnnouncement(
     AppUser driver,
     String announcementId,
-    AnnouncementResponseStatus status,
-  ) async =>
+    AnnouncementResponseStatus status, {
+    String? rejectionReason,
+  }) async =>
       'Disponivel apenas com Firebase.';
 
   @override
+  Stream<List<FleetAdminAlert>> watchAdminAlerts() => Stream.value(const []);
+
+  @override
+  Future<void> markAdminAlertsViewed(AppUser admin) async {}
+
+  @override
   Future<void> saveFcmToken(AppUser user, String token) async {}
+
+  @override
+  Future<VehicleChecklist?> getTodayChecklist(AppUser driver, String vehicleId) async => null;
+
+  @override
+  Future<String?> saveVehicleChecklist(
+    AppUser driver,
+    Vehicle vehicle, {
+    required Map<String, bool> items,
+    String? notes,
+  }) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
+  Stream<List<VehicleChecklist>> watchTodayChecklistsForDriver(AppUser driver) => Stream.value(const []);
+
+  @override
+  Stream<List<VehicleChecklist>> watchVehicleChecklists(AppUser user) => Stream.value(const []);
 
   @override
   Future<String?> startVehicle(String vehicleId, AppUser user) async {

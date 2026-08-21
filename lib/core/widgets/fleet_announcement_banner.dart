@@ -134,7 +134,19 @@ class _AnnouncementCard extends ConsumerWidget {
   Future<void> _respond(BuildContext context, WidgetRef ref, AnnouncementResponseStatus status) async {
     final driver = user;
     if (driver == null) return;
-    final error = await ref.read(repositoryProvider).respondToAnnouncement(driver, announcement.id, status);
+
+    String? rejectionReason;
+    if (status == AnnouncementResponseStatus.rejected) {
+      rejectionReason = await _askRejectionReason(context);
+      if (rejectionReason == null) return;
+    }
+
+    final error = await ref.read(repositoryProvider).respondToAnnouncement(
+          driver,
+          announcement.id,
+          status,
+          rejectionReason: rejectionReason,
+        );
     if (!context.mounted) return;
     if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
@@ -142,6 +154,43 @@ class _AnnouncementCard extends ConsumerWidget {
     }
     final label = status == AnnouncementResponseStatus.completed ? 'concluido' : 'recusado';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lembrete marcado como $label.')));
+  }
+
+  Future<String?> _askRejectionReason(BuildContext context) async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Justificativa obrigatoria'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Motivo da recusa',
+            hintText: 'Descreva por que nao pode concluir o lembrete',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              if (text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Informe a justificativa para recusar.')),
+                );
+                return;
+              }
+              Navigator.pop(context, text);
+            },
+            child: const Text('Enviar recusa'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
   }
 }
 
