@@ -37,8 +37,18 @@ class FleetAnnouncementBanner extends ConsumerWidget {
 
     if (announcements.isEmpty) return const SizedBox.shrink();
 
+    final visibleAnnouncements = user?.role == UserRole.driver
+        ? announcements.where((announcement) {
+            if (announcement.isExpired) return false;
+            if (announcement.targetDriverId == null) return announcement.active;
+            return announcement.isPendingResponse && announcement.targetDriverId == user!.id;
+          }).toList()
+        : announcements;
+
+    if (visibleAnnouncements.isEmpty) return const SizedBox.shrink();
+
     return Column(
-      children: announcements
+      children: visibleAnnouncements
           .map((announcement) => _AnnouncementCard(announcement: announcement, user: user))
           .toList(),
     );
@@ -110,6 +120,10 @@ class _AnnouncementCard extends ConsumerWidget {
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.statusMoving,
+                      foregroundColor: Colors.white,
+                    ),
                     onPressed: () => _respond(context, ref, AnnouncementResponseStatus.completed),
                     icon: const Icon(Icons.check_circle_outline),
                     label: const Text('CONCLUIDO'),

@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:signature/signature.dart';
 
 import '../../app/theme.dart';
 import '../../shared/models/app_models.dart';
@@ -36,26 +39,51 @@ class VehicleChecklistSheet extends ConsumerStatefulWidget {
 
 class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
   final _notesController = TextEditingController();
+  final _signatureController = SignatureController(
+    penStrokeWidth: 2.5,
+    penColor: AppColors.textPrimary,
+    exportBackgroundColor: Colors.white,
+  );
   final _items = <String, bool>{for (final item in VehicleChecklistConfig.items) item.id: false};
   var _saving = false;
 
-  bool get _allChecked => VehicleChecklistConfig.items.every((item) => _items[item.id] == true);
+  int get _missingCount => VehicleChecklistConfig.items.where((item) => _items[item.id] != true).length;
 
   @override
   void dispose() {
     _notesController.dispose();
+    _signatureController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    if (!_allChecked || _saving) return;
+    if (_saving) return;
+
+    if (_signatureController.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Assine o checklist antes de concluir.')),
+      );
+      return;
+    }
+
+    final signatureBytes = await _signatureController.toPngBytes();
+    if (signatureBytes == null || signatureBytes.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nao foi possivel capturar a assinatura.')),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
+    final signatureBase64 = base64Encode(signatureBytes);
 
     final error = await ref.read(repositoryProvider).saveVehicleChecklist(
           widget.driver,
           widget.vehicle,
           items: _items,
           notes: _notesController.text,
+          signatureBase64: signatureBase64,
         );
 
     if (!mounted) return;
@@ -78,6 +106,7 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
       items: Map<String, bool>.from(_items),
       completedAt: DateTime.now(),
       notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+      signatureBase64: signatureBase64,
     );
 
     await _showPdfActions(saved);
@@ -102,10 +131,10 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
           ),
           TextButton(
             onPressed: () async {
-              final file = await pdfService.download(checklist);
+              final savedPath = await pdfService.download(checklist);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('PDF salvo em: ${file.path}')),
+                  SnackBar(content: Text('PDF salvo: $savedPath')),
                 );
               }
             },
@@ -138,7 +167,7 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
               children: [
                 const CorporatePageHeader(
                   title: 'Inspecao antes da corrida',
-                  subtitle: 'Obrigatorio na primeira vez do veiculo no dia ou ao trocar de veiculo.',
+                  subtitle: 'Marque o que esta OK. Itens sem marca indicam possivel falta ou problema.',
                 ),
                 const SizedBox(height: 12),
                 CorporateSurface(
@@ -163,6 +192,9 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
                           ? null
                           : (value) => setState(() => _items[item.id] = value ?? false),
                       title: Text(item.label, style: const TextStyle(fontSize: 14)),
+                      subtitle: (_items[item.id] != true)
+                          ? const Text('Sem marca = pode estar faltando', style: TextStyle(fontSize: 11))
+                          : null,
                       controlAffinity: ListTileControlAffinity.leading,
                       contentPadding: EdgeInsets.zero,
                     ),
@@ -175,10 +207,55 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
                   enabled: !_saving,
                   decoration: const InputDecoration(
                     labelText: 'Observacoes (opcional)',
-                    hintText: 'Ex.: arranhão lateral direita',
+                    hintText: 'Ex.: extintor vencido, pneu careca',
                     alignLabelWithHint: true,
                   ),
                 ),
+                const SizedBox(height: 16),
+                const CorporateSectionTitle(title: 'Assinatura do motorista'),
+                const Text(
+                  'Obrigatoria para concluir o checklist.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                CorporateSurface(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppColors.border),
+                            color: Colors.white,
+                          ),
+                          child: Signature(
+                            controller: _signatureController,
+                            height: 180,
+                            backgroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: _saving ? null : () => _signatureController.clear(),
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Limpar assinatura'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_missingCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '$_missingCount item(ns) sem marca — serao registrados como possivel falta no PDF.',
+                      style: const TextStyle(color: AppColors.statusStopped, fontSize: 12),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -189,7 +266,7 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _allChecked && !_saving ? _submit : null,
+                  onPressed: !_saving ? _submit : null,
                   icon: _saving
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.checklist_rtl),
@@ -221,10 +298,10 @@ Future<void> showChecklistPdfOptions(
         ),
         TextButton(
           onPressed: () async {
-            final file = await pdfService.download(checklist);
+            final savedPath = await pdfService.download(checklist);
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('PDF salvo em: ${file.path}')),
+                SnackBar(content: Text('PDF salvo: $savedPath')),
               );
             }
           },

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:intl/intl.dart';
@@ -29,6 +30,7 @@ class VehicleChecklistPdfService {
 
   Future<List<int>> buildPdfBytes(VehicleChecklist checklist) async {
     final completedLabel = DateFormat('dd/MM/yyyy HH:mm').format(checklist.completedAt);
+    final signatureImage = _signatureImage(checklist.signatureBase64);
     final doc = pw.Document();
 
     doc.addPage(
@@ -48,6 +50,14 @@ class VehicleChecklistPdfService {
           pw.Text('Modelo: ${checklist.vehicleModel}', style: const pw.TextStyle(fontSize: 12)),
           pw.Text('Placa: ${checklist.vehiclePlate}', style: const pw.TextStyle(fontSize: 12)),
           pw.Text('Concluido em: $completedLabel', style: const pw.TextStyle(fontSize: 12)),
+          if (checklist.missingItemsCount > 0)
+            pw.Padding(
+              padding: const pw.EdgeInsets.only(top: 8),
+              child: pw.Text(
+                'Itens sem marca: ${checklist.missingItemsCount} (possivel falta ou problema)',
+                style: pw.TextStyle(fontSize: 11, color: PdfColors.red800),
+              ),
+            ),
           pw.SizedBox(height: 24),
           pw.Text('Itens verificados', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 8),
@@ -57,7 +67,7 @@ class VehicleChecklistPdfService {
                 .map(
                   (item) => [
                     item.label,
-                    checklist.items[item.id] == true ? 'OK' : 'Pendente',
+                    checklist.items[item.id] == true ? 'OK' : 'FALTA / PROBLEMA',
                   ],
                 )
                 .toList(),
@@ -73,6 +83,16 @@ class VehicleChecklistPdfService {
             pw.SizedBox(height: 6),
             pw.Text(checklist.notes!, style: const pw.TextStyle(fontSize: 11)),
           ],
+          if (signatureImage != null) ...[
+            pw.SizedBox(height: 24),
+            pw.Text('Assinatura do motorista', style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 8),
+            pw.Container(
+              decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey500)),
+              padding: const pw.EdgeInsets.all(8),
+              child: pw.Image(signatureImage, height: 80),
+            ),
+          ],
           pw.SizedBox(height: 32),
           pw.Text(
             'Documento gerado pelo Controle de Veiculos.',
@@ -83,6 +103,15 @@ class VehicleChecklistPdfService {
     );
 
     return doc.save();
+  }
+
+  pw.MemoryImage? _signatureImage(String? signatureBase64) {
+    if (signatureBase64 == null || signatureBase64.trim().isEmpty) return null;
+    try {
+      return pw.MemoryImage(base64Decode(signatureBase64));
+    } catch (_) {
+      return null;
+    }
   }
 
   String _fileName(VehicleChecklist checklist) {

@@ -70,6 +70,22 @@ service cloud.firestore {
         && request.resource.data.responseStatus in ['completed', 'rejected'];
     }
 
+    function isDriverDeletingOwnReminder() {
+      return isSignedIn()
+        && resource.data.targetDriverId == request.auth.uid
+        && resource.data.active == true;
+    }
+
+    function isDriverChecklistCreate() {
+      return isSignedIn()
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.checklistDate is string
+        && request.resource.data.vehicleId is string
+        && request.resource.data.items is map
+        && request.resource.data.driverName is string
+        && request.resource.data.vehicleName is string;
+    }
+
     match /users/{userId} {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       allow create: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
@@ -99,7 +115,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isAdmin();
       allow update: if isAdmin() || isDriverAnnouncementResponse();
-      allow delete: if isAdmin() || (isSignedIn() && isExpiredAnnouncement());
+      allow delete: if isAdmin() || (isSignedIn() && isExpiredAnnouncement()) || isDriverDeletingOwnReminder();
     }
 
     match /admin_alerts/{alertId} {
@@ -110,9 +126,7 @@ service cloud.firestore {
 
     match /vehicle_checklists/{checklistId} {
       allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
-      allow create: if isSignedIn()
-        && request.resource.data.driverId == request.auth.uid
-        && request.resource.data.checklistDate is string;
+      allow create: if isDriverChecklistCreate();
       allow update, delete: if isAdmin();
     }
   }

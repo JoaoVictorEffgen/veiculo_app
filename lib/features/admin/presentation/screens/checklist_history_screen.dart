@@ -88,6 +88,14 @@ class _ChecklistHistoryTile extends StatelessWidget {
                       '${checklist.checklistDate} • ${formatDateTime(checklist.completedAt)}',
                       style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
                     ),
+                    if (checklist.missingItemsCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '${checklist.missingItemsCount} item(ns) com possivel falta',
+                          style: const TextStyle(color: AppColors.statusStopped, fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -180,8 +188,16 @@ class _ChecklistDetailSheet extends StatelessWidget {
                       size: 20,
                     ),
                     title: Text(item.label, style: const TextStyle(fontSize: 14)),
+                    subtitle: checklist.items[item.id] != true
+                        ? const Text('FALTA / PROBLEMA', style: TextStyle(color: AppColors.statusStopped, fontSize: 11))
+                        : const Text('OK', style: TextStyle(color: AppColors.statusMoving, fontSize: 11)),
                   ),
                 ),
+                if (checklist.hasSignature) ...[
+                  const SizedBox(height: 12),
+                  const CorporateSectionTitle(title: 'Assinatura'),
+                  const Text('Assinatura digital registrada no documento PDF.', style: TextStyle(fontSize: 13)),
+                ],
                 if (checklist.notes != null && checklist.notes!.trim().isNotEmpty) ...[
                   const SizedBox(height: 12),
                   const CorporateSectionTitle(title: 'Observacoes'),

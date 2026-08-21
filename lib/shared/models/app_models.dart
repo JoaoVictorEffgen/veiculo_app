@@ -233,6 +233,7 @@ class VehicleChecklist {
     required this.completedAt,
     this.notes,
     this.photoUrls = const [],
+    this.signatureBase64,
   });
 
   final String id;
@@ -247,9 +248,12 @@ class VehicleChecklist {
   final DateTime completedAt;
   final String? notes;
   final List<String> photoUrls;
+  final String? signatureBase64;
 
-  bool get isComplete => VehicleChecklistConfig.items.every((item) => items[item.id] == true);
+  int get missingItemsCount =>
+      VehicleChecklistConfig.items.where((item) => items[item.id] != true).length;
   bool get hasPhotos => photoUrls.isNotEmpty;
+  bool get hasSignature => signatureBase64 != null && signatureBase64!.isNotEmpty;
 }
 
 String checklistDateKey([DateTime? date]) {

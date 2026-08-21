@@ -40,6 +40,7 @@ abstract class VehicleRepository {
     Vehicle vehicle, {
     required Map<String, bool> items,
     String? notes,
+    required String signatureBase64,
   });
   Stream<List<VehicleChecklist>> watchTodayChecklistsForDriver(AppUser driver);
   Stream<List<VehicleChecklist>> watchVehicleChecklists(AppUser user);

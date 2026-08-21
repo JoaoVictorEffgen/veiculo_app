@@ -244,13 +244,6 @@ class FirebaseVehicleRepository implements VehicleRepository {
       if (announcement.isExpired) return 'Este lembrete expirou.';
 
       final batch = _firestore.batch();
-      batch.update(doc.reference, {
-        'responseStatus': status.name,
-        'respondedAt': FieldValue.serverTimestamp(),
-        'respondedByName': driver.name,
-        'active': false,
-        if (status == AnnouncementResponseStatus.rejected) 'rejectionReason': rejectionReason!.trim(),
-      });
 
       final alertRef = _firestore.collection(FirestorePaths.adminAlerts).doc();
       batch.set(alertRef, {
@@ -263,6 +256,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'createdAt': FieldValue.serverTimestamp(),
         'viewed': false,
       });
+
+      batch.delete(doc.reference);
 
       await batch.commit();
       return null;
@@ -360,18 +355,22 @@ class FirebaseVehicleRepository implements VehicleRepository {
     Vehicle vehicle, {
     required Map<String, bool> items,
     String? notes,
+    required String signatureBase64,
   }) async {
     if (driver.role != UserRole.driver) return 'Somente motoristas podem registrar checklist.';
 
-    final incomplete = VehicleChecklistConfig.items.where((item) => items[item.id] != true);
-    if (incomplete.isNotEmpty) return 'Marque todos os itens do checklist antes de continuar.';
+    final authUser = _auth.currentUser;
+    if (authUser == null) return 'Sessao expirada. Faca login novamente.';
+    if (authUser.uid != driver.id) return 'Sessao invalida. Faca login novamente.';
+
+    if (signatureBase64.trim().isEmpty) return 'Assine o checklist antes de concluir.';
 
     final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicle.id);
     final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
     final itemMap = {for (final item in VehicleChecklistConfig.items) item.id: items[item.id] == true};
 
     try {
-      final existing = await docRef.get(const GetOptions(source: Source.serverAndCache));
+      final existing = await docRef.get();
       if (existing.exists) return 'Checklist deste veiculo ja foi feito hoje.';
 
       await docRef.set({
@@ -384,6 +383,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'checklistDate': checklistDateKey(),
         'items': itemMap,
         if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        'signatureBase64': signatureBase64.trim(),
         'completedAt': FieldValue.serverTimestamp(),
       });
       return null;
@@ -830,6 +830,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       completedAt: (data['completedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       notes: data['notes'] as String?,
       photoUrls: (data['photoUrls'] as List<dynamic>? ?? const []).map((item) => item.toString()).toList(),
+      signatureBase64: data['signatureBase64'] as String?,
     );
   }
 

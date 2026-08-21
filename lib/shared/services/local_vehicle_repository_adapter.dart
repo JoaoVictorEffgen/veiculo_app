@@ -121,6 +121,7 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
     Vehicle vehicle, {
     required Map<String, bool> items,
     String? notes,
+    required String signatureBase64,
   }) async =>
       'Disponivel apenas com Firebase.';
 
