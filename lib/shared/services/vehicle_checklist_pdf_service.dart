@@ -1,34 +1,31 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:intl/intl.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 
 import '../models/app_models.dart';
+import 'checklist_pdf_file_saver.dart'
+    if (dart.library.io) 'checklist_pdf_file_saver_io.dart'
+    if (dart.library.html) 'checklist_pdf_file_saver_web.dart';
 
 class VehicleChecklistPdfService {
-  Future<File> generateAndSave(VehicleChecklist checklist) async {
-    final bytes = await buildPdfBytes(checklist);
-    final directory = await _checklistDirectory();
-    final fileName = _fileName(checklist);
-    final file = File(p.join(directory.path, fileName));
-    await file.writeAsBytes(bytes, flush: true);
-    return file;
-  }
-
   Future<void> share(VehicleChecklist checklist) async {
-    final file = await generateAndSave(checklist);
+    final bytes = Uint8List.fromList(await buildPdfBytes(checklist));
+    final fileName = _fileName(checklist);
     await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'application/pdf', name: p.basename(file.path))],
+      [XFile.fromData(bytes, mimeType: 'application/pdf', name: fileName)],
       subject: 'Checklist ${checklist.vehicleName} - ${checklist.checklistDate}',
       text: 'Checklist do veiculo ${checklist.vehicleName} (${checklist.vehiclePlate})',
     );
   }
 
-  Future<File> download(VehicleChecklist checklist) => generateAndSave(checklist);
+  Future<String> download(VehicleChecklist checklist) async {
+    final bytes = Uint8List.fromList(await buildPdfBytes(checklist));
+    final fileName = _fileName(checklist);
+    return saveChecklistPdfBytes(bytes, fileName);
+  }
 
   Future<List<int>> buildPdfBytes(VehicleChecklist checklist) async {
     final completedLabel = DateFormat('dd/MM/yyyy HH:mm').format(checklist.completedAt);
@@ -86,15 +83,6 @@ class VehicleChecklistPdfService {
     );
 
     return doc.save();
-  }
-
-  Future<Directory> _checklistDirectory() async {
-    final base = await getApplicationDocumentsDirectory();
-    final directory = Directory(p.join(base.path, 'checklists'));
-    if (!await directory.exists()) {
-      await directory.create(recursive: true);
-    }
-    return directory;
   }
 
   String _fileName(VehicleChecklist checklist) {
