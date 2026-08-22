@@ -76,7 +76,7 @@ service cloud.firestore {
         && resource.data.active == true;
     }
 
-    function isDriverChecklistCreate() {
+    function isDriverChecklistCreate(checklistId) {
       return isSignedIn()
         && request.resource.data.driverId == request.auth.uid
         && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate
@@ -85,14 +85,14 @@ service cloud.firestore {
         && request.resource.data.items is map;
     }
 
-    function isDriverChecklistUpdate() {
+    function isDriverChecklistUpdate(checklistId) {
       return isSignedIn()
         && resource.data.driverId == request.auth.uid
         && request.resource.data.driverId == request.auth.uid
         && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate;
     }
 
-    function canReadChecklist() {
+    function canReadChecklist(checklistId) {
       return isAdmin()
         || (isSignedIn() && resource.data.driverId == request.auth.uid)
         || (isSignedIn() && checklistId.matches('^' + request.auth.uid + '_.*'));
@@ -137,9 +137,9 @@ service cloud.firestore {
     }
 
     match /vehicle_checklists/{checklistId} {
-      allow read: if canReadChecklist();
-      allow create: if isDriverChecklistCreate();
-      allow update: if isAdmin() || isDriverChecklistUpdate();
+      allow read: if canReadChecklist(checklistId);
+      allow create: if isDriverChecklistCreate(checklistId);
+      allow update: if isAdmin() || isDriverChecklistUpdate(checklistId);
       allow delete: if isAdmin();
     }
   }
