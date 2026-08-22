@@ -18,6 +18,10 @@ class AppUser {
   final String email;
   final String password;
   final UserRole role;
+
+  bool get mustCompleteVehicleChecklist => role == UserRole.driver || role == UserRole.admin;
+
+  bool get canRespondToFleetTasks => role == UserRole.driver;
 }
 
 class Vehicle {
@@ -156,17 +160,20 @@ class FleetAnnouncement {
 
   bool get isExpired => expiresAt != null && !expiresAt!.isAfter(DateTime.now());
 
-  bool get requiresResponse => targetDriverId != null;
+  bool get isGroupTask => targetDriverId == null;
 
-  bool get isPendingResponse => requiresResponse && responseStatus == null && active;
+  bool get requiresResponse => true;
+
+  bool get isPendingResponse => active && responseStatus == null && !isExpired;
 
   bool isVisibleTo(AppUser user) {
     if (isExpired) return false;
     if (message.trim().isEmpty) return false;
     if (user.role == UserRole.admin) return active;
     if (!active) return false;
-    if (targetDriverId == null) return true;
-    return targetDriverId == user.id && isPendingResponse;
+    if (!isPendingResponse) return false;
+    if (isGroupTask) return true;
+    return targetDriverId == user.id;
   }
 }
 

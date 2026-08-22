@@ -105,20 +105,43 @@ class _AnimatedLoginHeader extends StatefulWidget {
 }
 
 class _AnimatedLoginHeaderState extends State<_AnimatedLoginHeader> with SingleTickerProviderStateMixin {
+  static const _vehicleIcons = <IconData>[
+    Icons.local_shipping_rounded,
+    Icons.directions_car_rounded,
+    Icons.directions_bus_rounded,
+    Icons.airport_shuttle_rounded,
+  ];
+
+  static const _iconSize = 52.0;
+  static const _roadPadding = 24.0;
+
   late final AnimationController _controller;
   late final Animation<double> _drive;
+  var _vehicleIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 5200))..repeat(reverse: true);
-    _drive = Tween<double>(begin: -1, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOutCubic),
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4200),
     );
+    _drive = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    _controller.addStatusListener(_onAnimationStatus);
+    _controller.forward();
+  }
+
+  void _onAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    setState(() => _vehicleIndex = (_vehicleIndex + 1) % _vehicleIcons.length);
+    _controller.forward(from: 0);
   }
 
   @override
   void dispose() {
+    _controller.removeStatusListener(_onAnimationStatus);
     _controller.dispose();
     super.dispose();
   }
@@ -134,53 +157,66 @@ class _AnimatedLoginHeaderState extends State<_AnimatedLoginHeader> with SingleT
       child: Column(
         children: [
           SizedBox(
-            height: 80,
+            height: 88,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final travel = constraints.maxWidth * 0.22;
+                final roadWidth = constraints.maxWidth - (_roadPadding * 2);
+                final maxOffset = roadWidth - _iconSize;
+
                 return AnimatedBuilder(
-                  animation: _controller,
+                  animation: _drive,
                   builder: (context, child) {
                     return Stack(
                       clipBehavior: Clip.none,
-                      alignment: Alignment.center,
                       children: [
                         Positioned(
-                          left: 20,
-                          right: 20,
-                          bottom: 14,
+                          left: _roadPadding,
+                          right: _roadPadding,
+                          bottom: 16,
                           child: Container(
-                            height: 3,
+                            height: 4,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.25),
+                              color: Colors.white.withValues(alpha: 0.22),
                               borderRadius: BorderRadius.circular(99),
                             ),
                           ),
                         ),
                         Positioned(
-                          left: 20,
-                          right: 20,
-                          bottom: 12,
+                          left: _roadPadding,
+                          right: _roadPadding,
+                          bottom: 14,
                           child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: List.generate(
-                              5,
+                              6,
                               (_) => Container(
-                                width: 10,
+                                width: 14,
                                 height: 2,
                                 color: Colors.white.withValues(alpha: 0.35),
                               ),
                             ),
                           ),
                         ),
-                        Transform.translate(
-                          offset: Offset(_drive.value * travel, 0),
-                          child: child,
+                        Positioned(
+                          left: _roadPadding + (_drive.value * maxOffset),
+                          bottom: 18,
+                          child: child!,
                         ),
                       ],
                     );
                   },
-                  child: const Icon(Icons.local_shipping_rounded, size: 56, color: Colors.white),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 280),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
+                    child: Icon(
+                      _vehicleIcons[_vehicleIndex],
+                      key: ValueKey(_vehicleIndex),
+                      size: _iconSize,
+                      color: Colors.white,
+                    ),
+                  ),
                 );
               },
             ),

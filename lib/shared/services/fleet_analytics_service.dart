@@ -8,18 +8,24 @@ class FleetAnalyticsService {
     required List<Movement> movements,
     required List<Vehicle> vehicles,
     required List<AppUser> drivers,
+    required List<FleetAdminAlert> taskAlerts,
     required FleetPeriodSelection periodSelection,
     DateTime? now,
   }) {
     final current = now ?? DateTime.now();
     final period = periodSelection.resolveRange(now: current);
     final inPeriod = movements.where((m) => _inRange(m.createdAt, period)).toList();
+    final alertsInPeriod = taskAlerts.where((alert) {
+      if (alert.responseStatus != AnnouncementResponseStatus.completed) return false;
+      return _inRange(alert.createdAt, period);
+    }).toList();
 
     final utilizationByVehicle = _utilizationByVehicle(inPeriod, vehicles);
     final movingTimeByDriver = _movingTimeByDriver(movements, drivers, period, current);
     final kmByDriver = _kmByDriver(inPeriod, drivers);
     final kmByVehicle = _kmByVehicle(inPeriod, vehicles);
     final dailyKmTrend = _dailyKmTrend(inPeriod, period);
+    final tasksCompletedByDriver = _tasksCompletedByDriver(alertsInPeriod, drivers);
     final totalKm = kmByDriver.fold<double>(0, (sum, item) => sum + item.km);
 
     NamedCount? topVehicle;
@@ -37,6 +43,11 @@ class FleetAnalyticsService {
       topDriverByKm = kmByDriver.first;
     }
 
+    NamedCount? topTaskDriver;
+    if (tasksCompletedByDriver.isNotEmpty && tasksCompletedByDriver.first.count > 0) {
+      topTaskDriver = tasksCompletedByDriver.first;
+    }
+
     return FleetAnalyticsReport(
       period: period,
       utilizationByVehicle: utilizationByVehicle,
@@ -45,10 +56,24 @@ class FleetAnalyticsService {
       kmByVehicle: kmByVehicle,
       dailyKmTrend: dailyKmTrend,
       totalKm: totalKm,
+      tasksCompletedByDriver: tasksCompletedByDriver,
       topVehicle: topVehicle,
       topDriver: topDriver,
       topDriverByKm: topDriverByKm,
+      topTaskDriver: topTaskDriver,
     );
+  }
+
+  List<NamedCount> _tasksCompletedByDriver(List<FleetAdminAlert> alerts, List<AppUser> drivers) {
+    final totals = <String, int>{for (final driver in drivers) driver.id: 0};
+    for (final alert in alerts) {
+      totals.update(alert.driverId, (value) => value + 1, ifAbsent: () => 1);
+    }
+
+    return drivers
+        .map((driver) => NamedCount(id: driver.id, name: driver.name, count: totals[driver.id] ?? 0))
+        .toList()
+      ..sort((a, b) => b.count.compareTo(a.count));
   }
 
   List<NamedCount> _utilizationByVehicle(List<Movement> inPeriod, List<Vehicle> vehicles) {

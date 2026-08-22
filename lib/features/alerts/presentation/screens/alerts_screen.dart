@@ -59,7 +59,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
             CorporatePageHeader(
               title: 'Alertas administrativos',
               subtitle: hasAlerts
-                  ? 'Respostas de lembretes e veiculos que precisam de atencao.'
+                  ? 'Respostas de tarefas e veiculos que precisam de atencao.'
                   : 'Nenhum alerta ativo no momento.',
             ),
             const SizedBox(height: 16),
@@ -69,7 +69,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                 message: 'Nenhum alerta relevante no momento.',
               ),
             if (adminAlerts.isNotEmpty) ...[
-              const CorporateSectionTitle(title: 'Respostas de lembretes'),
+              const CorporateSectionTitle(title: 'Respostas de tarefas'),
               ...adminAlerts.map((alert) => _AdminAlertCard(alert: alert)),
               const SizedBox(height: 16),
             ],

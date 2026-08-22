@@ -26,7 +26,7 @@ class FleetAnnouncementBanner extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Nao foi possivel carregar avisos.',
+                'Nao foi possivel carregar tarefas.',
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
               ),
             ),
@@ -35,15 +35,9 @@ class FleetAnnouncementBanner extends ConsumerWidget {
       );
     }
 
-    if (announcements.isEmpty) return const SizedBox.shrink();
+    if (announcements.isEmpty || user == null) return const SizedBox.shrink();
 
-    final visibleAnnouncements = user?.role == UserRole.driver
-        ? announcements.where((announcement) {
-            if (announcement.isExpired) return false;
-            if (announcement.targetDriverId == null) return announcement.active;
-            return announcement.isPendingResponse && announcement.targetDriverId == user!.id;
-          }).toList()
-        : announcements;
+    final visibleAnnouncements = announcements.where((announcement) => announcement.isVisibleTo(user)).toList();
 
     if (visibleAnnouncements.isEmpty) return const SizedBox.shrink();
 
@@ -59,14 +53,13 @@ class _AnnouncementCard extends ConsumerWidget {
   const _AnnouncementCard({required this.announcement, required this.user});
 
   final FleetAnnouncement announcement;
-  final AppUser? user;
+  final AppUser user;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isDriver = user?.role == UserRole.driver;
-    final canRespond = isDriver &&
+    final canRespond = user.canRespondToFleetTasks &&
         announcement.isPendingResponse &&
-        announcement.targetDriverId == user?.id;
+        (announcement.isGroupTask || announcement.targetDriverId == user.id);
 
     return CorporateSurface(
       margin: const EdgeInsets.only(bottom: 12),
@@ -76,16 +69,16 @@ class _AnnouncementCard extends ConsumerWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.campaign_outlined, color: AppColors.primary),
+              const Icon(Icons.task_alt_outlined, color: AppColors.primary),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      announcement.targetDriverName == null
-                          ? 'Aviso da administracao'
-                          : 'Lembrete para ${announcement.targetDriverName}',
+                      announcement.isGroupTask
+                          ? 'Tarefa para todos'
+                          : 'Tarefa para ${announcement.targetDriverName}',
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 6),
@@ -99,6 +92,14 @@ class _AnnouncementCard extends ConsumerWidget {
                       Text(
                         'Valido ate ${formatDate(announcement.expiresAt)}',
                         style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                    if (announcement.isGroupTask && user.canRespondToFleetTasks)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Visivel para todos os motoristas cadastrados. O primeiro que concluir remove para todos.',
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontStyle: FontStyle.italic),
+                        ),
                       ),
                     if (announcement.responseStatus != null)
                       Padding(
@@ -116,29 +117,40 @@ class _AnnouncementCard extends ConsumerWidget {
           ),
           if (canRespond) ...[
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.statusMoving,
-                      foregroundColor: Colors.white,
+            if (announcement.isGroupTask)
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.statusMoving,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => _respond(context, ref, AnnouncementResponseStatus.completed),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('CONCLUIR'),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.statusMoving,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => _respond(context, ref, AnnouncementResponseStatus.completed),
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('CONCLUIDO'),
                     ),
-                    onPressed: () => _respond(context, ref, AnnouncementResponseStatus.completed),
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('CONCLUIDO'),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _respond(context, ref, AnnouncementResponseStatus.rejected),
-                    icon: const Icon(Icons.cancel_outlined),
-                    label: const Text('RECUSADO'),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _respond(context, ref, AnnouncementResponseStatus.rejected),
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text('RECUSADO'),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
           ],
         ],
       ),
@@ -146,9 +158,6 @@ class _AnnouncementCard extends ConsumerWidget {
   }
 
   Future<void> _respond(BuildContext context, WidgetRef ref, AnnouncementResponseStatus status) async {
-    final driver = user;
-    if (driver == null) return;
-
     String? rejectionReason;
     if (status == AnnouncementResponseStatus.rejected) {
       rejectionReason = await _askRejectionReason(context);
@@ -156,7 +165,7 @@ class _AnnouncementCard extends ConsumerWidget {
     }
 
     final error = await ref.read(repositoryProvider).respondToAnnouncement(
-          driver,
+          user,
           announcement.id,
           status,
           rejectionReason: rejectionReason,
@@ -166,8 +175,8 @@ class _AnnouncementCard extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
-    final label = status == AnnouncementResponseStatus.completed ? 'concluido' : 'recusado';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lembrete marcado como $label.')));
+    final label = status == AnnouncementResponseStatus.completed ? 'concluida' : 'recusada';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tarefa marcada como $label.')));
   }
 
   Future<String?> _askRejectionReason(BuildContext context) async {
@@ -182,7 +191,7 @@ class _AnnouncementCard extends ConsumerWidget {
           autofocus: true,
           decoration: const InputDecoration(
             labelText: 'Motivo da recusa',
-            hintText: 'Descreva por que nao pode concluir o lembrete',
+            hintText: 'Descreva por que nao pode concluir a tarefa',
           ),
         ),
         actions: [
@@ -229,7 +238,7 @@ class _ResponseBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        '${isCompleted ? 'Concluido' : 'Recusado'}'
+        '${isCompleted ? 'Concluida' : 'Recusada'}'
         '${respondedByName == null ? '' : ' por $respondedByName'}'
         '${respondedAt == null ? '' : ' • ${formatDateTime(respondedAt)}'}',
         style: TextStyle(
@@ -306,7 +315,7 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
     });
     final targetLabel = selectedDriver == null ? 'todos os motoristas' : selectedDriver.name;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Lembrete publicado para $targetLabel.')),
+      SnackBar(content: Text('Tarefa publicada para $targetLabel.')),
     );
   }
 
@@ -319,7 +328,7 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lembrete removido.')));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tarefa removida.')));
   }
 
   @override
@@ -333,9 +342,10 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const CorporateSectionTitle(title: 'Lembretes para motoristas'),
+          const CorporateSectionTitle(title: 'Tarefas para motoristas'),
           const Text(
-            'Destine a um motorista para exigir resposta (Concluido/Recusado) com notificacao instantanea.',
+            'Para todos os motoristas cadastrados: so Concluir — o primeiro que concluir remove para todos. '
+            'Para um motorista especifico: Concluido ou Recusado com notificacao instantanea.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 12),
@@ -353,8 +363,8 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      announcement.targetDriverName == null
-                          ? 'Lembrete geral'
+                      announcement.isGroupTask
+                          ? 'Tarefa para todos'
                           : 'Para ${announcement.targetDriverName}',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
@@ -391,7 +401,7 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
             controller: _controller,
             maxLines: 3,
             decoration: const InputDecoration(
-              labelText: 'Novo lembrete',
+              labelText: 'Nova tarefa',
               hintText: 'Ex.: Amanha manutencao do Fiorino 01',
               alignLabelWithHint: true,
             ),
@@ -406,7 +416,7 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
             items: [
               const DropdownMenuItem<String?>(
                 value: null,
-                child: Text('Todos os motoristas'),
+                child: Text('Todos os motoristas cadastrados'),
               ),
               ...drivers.map(
                 (driver) => DropdownMenuItem<String?>(
@@ -440,8 +450,8 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
           const SizedBox(height: 12),
           ElevatedButton.icon(
             onPressed: _publishing ? null : _publish,
-            icon: const Icon(Icons.campaign_outlined),
-            label: Text(_publishing ? 'Publicando...' : 'PUBLICAR LEMBRETE'),
+            icon: const Icon(Icons.task_alt_outlined),
+            label: Text(_publishing ? 'Publicando...' : 'PUBLICAR TAREFA'),
           ),
         ],
       ),

@@ -24,7 +24,7 @@ class AnnouncementNotificationService {
   AppUser? _activeUser;
 
   static const _channelId = 'fleet_announcements';
-  static const _channelName = 'Lembretes da frota';
+  static const _channelName = 'Tarefas da frota';
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -109,7 +109,7 @@ class AnnouncementNotificationService {
           : '${alert.driverName} $statusLabel: ${alert.message}';
 
       unawaited(_showNotification(
-        title: 'Resposta do lembrete',
+        title: 'Resposta da tarefa',
         body: body,
         id: alert.id.hashCode,
       ));
@@ -135,7 +135,7 @@ class AnnouncementNotificationService {
         _knownResponses[announcement.id] = announcement.responseStatus;
         if (announcement.targetDriverId == user.id || announcement.targetDriverId == null) {
           unawaited(_showNotification(
-            title: 'Novo lembrete da administracao',
+            title: 'Nova tarefa da administracao',
             body: announcement.message,
             id: announcement.id.hashCode,
           ));
@@ -156,7 +156,7 @@ class AnnouncementNotificationService {
         final statusLabel =
             announcement.responseStatus == AnnouncementResponseStatus.completed ? 'concluiu' : 'recusou';
         unawaited(_showNotification(
-          title: 'Resposta do lembrete',
+          title: 'Resposta da tarefa',
           body: '$driverName $statusLabel: ${announcement.message}',
           id: '${announcement.id}_${announcement.responseStatus!.name}'.hashCode,
         ));

@@ -59,10 +59,10 @@ class _DashboardBody extends ConsumerWidget {
             children: [
               Expanded(
                 child: CorporateMetricTile(
-                  label: 'Mais km no periodo',
-                  value: report.topDriverByKm == null ? '--' : report.topDriverByKm!.name.split(' ').first,
-                  icon: Icons.route_outlined,
-                  color: AppColors.primary,
+                  label: 'Mais tarefas concluidas',
+                  value: report.topTaskDriver == null ? '--' : report.topTaskDriver!.name.split(' ').first,
+                  icon: Icons.task_alt_outlined,
+                  color: AppColors.statusMoving,
                 ),
               ),
               const SizedBox(width: 8),
@@ -71,7 +71,7 @@ class _DashboardBody extends ConsumerWidget {
                   label: 'Total da frota',
                   value: '${report.totalKm.toStringAsFixed(1)} km',
                   icon: Icons.speed_outlined,
-                  color: AppColors.statusMoving,
+                  color: AppColors.primary,
                 ),
               ),
             ],
@@ -81,19 +81,41 @@ class _DashboardBody extends ConsumerWidget {
             children: [
               Expanded(
                 child: CorporateMetricTile(
+                  label: 'Mais km no periodo',
+                  value: report.topDriverByKm == null ? '--' : report.topDriverByKm!.name.split(' ').first,
+                  icon: Icons.route_outlined,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: CorporateMetricTile(
                   label: 'Mais tempo dirigindo',
                   value: report.topDriver == null ? '--' : report.topDriver!.name.split(' ').first,
                   icon: Icons.timer_outlined,
                   color: AppColors.statusMovingDark,
                 ),
               ),
-              const SizedBox(width: 8),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
               Expanded(
                 child: CorporateMetricTile(
                   label: 'Veiculo mais usado',
                   value: report.topVehicle?.name ?? '--',
                   icon: Icons.local_shipping_outlined,
                   color: AppColors.primaryDark,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: CorporateMetricTile(
+                  label: 'Tarefas concluidas',
+                  value: '${report.tasksCompletedByDriver.fold<int>(0, (sum, item) => sum + item.count)}',
+                  icon: Icons.checklist_rtl_outlined,
+                  color: AppColors.statusMoving,
                 ),
               ),
             ],
@@ -108,6 +130,15 @@ class _DashboardBody extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: 24),
+          _ChartCard(
+            title: 'Tarefas concluidas por motorista',
+            subtitle: 'Ranking de quem mais concluiu tarefas no periodo',
+            child: _CountBarChart(
+              data: report.tasksCompletedByDriver,
+              barColor: AppColors.statusMoving,
+              emptyMessage: 'Nenhuma tarefa concluida no periodo selecionado.',
+            ),
+          ),
           _ChartCard(
             title: 'Km rodados por motorista',
             subtitle: 'Grafico de barras horizontais — ideal para ranking de distancia',
@@ -371,15 +402,20 @@ class _DurationBarChart extends StatelessWidget {
 }
 
 class _CountBarChart extends StatelessWidget {
-  const _CountBarChart({required this.data, required this.barColor});
+  const _CountBarChart({
+    required this.data,
+    required this.barColor,
+    this.emptyMessage = 'Nenhuma utilizacao registrada no periodo.',
+  });
 
   final List<NamedCount> data;
   final Color barColor;
+  final String emptyMessage;
 
   @override
   Widget build(BuildContext context) {
     if (data.isEmpty || data.every((item) => item.count == 0)) {
-      return const _EmptyChart(message: 'Nenhuma utilizacao registrada no periodo.');
+      return _EmptyChart(message: emptyMessage);
     }
 
     final maxY = data.map((e) => e.count).reduce((a, b) => a > b ? a : b).toDouble();

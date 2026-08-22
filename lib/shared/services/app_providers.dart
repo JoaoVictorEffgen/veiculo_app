@@ -183,7 +183,7 @@ final vehicleChecklistsProvider = StreamProvider<List<VehicleChecklist>>((ref) {
 
 final driverTodayChecklistsProvider = StreamProvider<List<VehicleChecklist>>((ref) {
   final user = ref.watch(authControllerProvider).user;
-  if (user == null || user.role != UserRole.driver) return Stream.value(const []);
+  if (user == null || !user.mustCompleteVehicleChecklist) return Stream.value(const []);
   return ref.watch(repositoryProvider).watchTodayChecklistsForDriver(user);
 });
 
@@ -212,8 +212,9 @@ final fleetAnalyticsProvider = Provider<AsyncValue<FleetAnalyticsReport>>((ref) 
   final movementsAsync = ref.watch(movementsProvider);
   final vehicles = ref.watch(vehicleControllerProvider);
   final usersAsync = ref.watch(usersProvider);
+  final adminAlertsAsync = ref.watch(adminAlertsProvider);
 
-  if (movementsAsync.isLoading || usersAsync.isLoading) {
+  if (movementsAsync.isLoading || usersAsync.isLoading || adminAlertsAsync.isLoading) {
     return const AsyncValue.loading();
   }
   if (movementsAsync.hasError) {
@@ -222,12 +223,16 @@ final fleetAnalyticsProvider = Provider<AsyncValue<FleetAnalyticsReport>>((ref) 
   if (usersAsync.hasError) {
     return AsyncValue.error(usersAsync.error!, usersAsync.stackTrace ?? StackTrace.empty);
   }
+  if (adminAlertsAsync.hasError) {
+    return AsyncValue.error(adminAlertsAsync.error!, adminAlertsAsync.stackTrace ?? StackTrace.empty);
+  }
 
   final drivers = usersAsync.valueOrNull?.where((item) => item.role == UserRole.driver).toList() ?? [];
   final report = ref.read(fleetAnalyticsServiceProvider).compute(
         movements: movementsAsync.valueOrNull ?? const [],
         vehicles: vehicles,
         drivers: drivers,
+        taskAlerts: adminAlertsAsync.valueOrNull ?? const [],
         periodSelection: period,
       );
   return AsyncValue.data(report);

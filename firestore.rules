@@ -70,6 +70,12 @@ service cloud.firestore {
         && request.resource.data.responseStatus in ['completed', 'rejected'];
     }
 
+    function isDriverCompletingGroupTask() {
+      return isSignedIn()
+        && resource.data.targetDriverId == null
+        && resource.data.active == true;
+    }
+
     function isDriverDeletingOwnReminder() {
       return isSignedIn()
         && resource.data.targetDriverId == request.auth.uid
@@ -127,7 +133,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isAdmin();
       allow update: if isAdmin() || isDriverAnnouncementResponse();
-      allow delete: if isAdmin() || (isSignedIn() && isExpiredAnnouncement()) || isDriverDeletingOwnReminder();
+      allow delete: if isAdmin() || (isSignedIn() && isExpiredAnnouncement()) || isDriverDeletingOwnReminder() || isDriverCompletingGroupTask();
     }
 
     match /admin_alerts/{alertId} {

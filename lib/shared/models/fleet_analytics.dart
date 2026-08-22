@@ -102,9 +102,11 @@ class FleetAnalyticsReport {
     required this.kmByVehicle,
     required this.dailyKmTrend,
     required this.totalKm,
+    required this.tasksCompletedByDriver,
     required this.topVehicle,
     required this.topDriver,
     required this.topDriverByKm,
+    required this.topTaskDriver,
   });
 
   final DateTimeRange period;
@@ -114,7 +116,9 @@ class FleetAnalyticsReport {
   final List<NamedKm> kmByVehicle;
   final List<DailyKmPoint> dailyKmTrend;
   final double totalKm;
+  final List<NamedCount> tasksCompletedByDriver;
   final NamedCount? topVehicle;
   final NamedDuration? topDriver;
   final NamedKm? topDriverByKm;
+  final NamedCount? topTaskDriver;
 }

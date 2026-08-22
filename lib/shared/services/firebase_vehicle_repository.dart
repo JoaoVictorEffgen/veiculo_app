@@ -170,7 +170,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       try {
         await _firestore.collection(FirestorePaths.announcements).doc(id).delete();
       } on FirebaseException catch (error) {
-        debugPrint('Falha ao remover lembrete expirado $id: ${error.message}');
+        debugPrint('Falha ao remover tarefa expirada $id: ${error.message}');
       }
     }
   }
@@ -183,9 +183,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
     String? targetDriverId,
     String? targetDriverName,
   }) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem publicar lembretes.';
+    if (actor.role != UserRole.admin) return 'Somente administradores podem publicar tarefas.';
     final text = message.trim();
-    if (text.isEmpty) return 'Escreva o lembrete antes de publicar.';
+    if (text.isEmpty) return 'Escreva a tarefa antes de publicar.';
     if (expiresAt != null && !expiresAt.isAfter(DateTime.now())) {
       return 'A data de validade precisa ser futura.';
     }
@@ -203,19 +203,19 @@ class FirebaseVehicleRepository implements VehicleRepository {
       });
       return null;
     } on FirebaseException catch (error) {
-      return error.message ?? 'Erro ao publicar lembrete.';
+      return error.message ?? 'Erro ao publicar tarefa.';
     }
   }
 
   @override
   Future<String?> deleteAnnouncement(AppUser actor, String announcementId) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem remover lembretes.';
+    if (actor.role != UserRole.admin) return 'Somente administradores podem remover tarefas.';
 
     try {
       await _firestore.collection(FirestorePaths.announcements).doc(announcementId).delete();
       return null;
     } on FirebaseException catch (error) {
-      return error.message ?? 'Erro ao remover lembrete.';
+      return error.message ?? 'Erro ao remover tarefa.';
     }
   }
 
@@ -226,43 +226,57 @@ class FirebaseVehicleRepository implements VehicleRepository {
     AnnouncementResponseStatus status, {
     String? rejectionReason,
   }) async {
-    if (driver.role != UserRole.driver) return 'Somente motoristas podem responder lembretes.';
+    if (driver.role != UserRole.driver) return 'Somente motoristas podem responder tarefas.';
     if (status == AnnouncementResponseStatus.rejected &&
         (rejectionReason == null || rejectionReason.trim().isEmpty)) {
-      return 'Informe a justificativa para recusar o lembrete.';
+      return 'Informe a justificativa para recusar a tarefa.';
     }
 
     try {
-      final doc = await _firestore.collection(FirestorePaths.announcements).doc(announcementId).get();
-      if (!doc.exists) return 'Lembrete nao encontrado.';
+      await _firestore.runTransaction((transaction) async {
+        final docRef = _firestore.collection(FirestorePaths.announcements).doc(announcementId);
+        final doc = await transaction.get(docRef);
+        if (!doc.exists) {
+          throw StateError('Tarefa ja foi concluida por outro motorista.');
+        }
 
-      final announcement = _announcementFromDoc(doc);
-      if (announcement.targetDriverId != driver.id) {
-        return 'Este lembrete nao foi destinado a voce.';
-      }
-      if (announcement.responseStatus != null) return 'Voce ja respondeu este lembrete.';
-      if (announcement.isExpired) return 'Este lembrete expirou.';
+        final announcement = _announcementFromDoc(doc);
+        if (announcement.isExpired) throw StateError('Esta tarefa expirou.');
 
-      final batch = _firestore.batch();
+        if (announcement.isGroupTask) {
+          if (status != AnnouncementResponseStatus.completed) {
+            throw StateError('Tarefas para todos so podem ser concluidas.');
+          }
+        } else {
+          if (announcement.targetDriverId != driver.id) {
+            throw StateError('Esta tarefa nao foi destinada a voce.');
+          }
+        }
 
-      final alertRef = _firestore.collection(FirestorePaths.adminAlerts).doc();
-      batch.set(alertRef, {
-        'announcementId': announcementId,
-        'driverId': driver.id,
-        'driverName': driver.name,
-        'message': announcement.message,
-        'responseStatus': status.name,
-        if (status == AnnouncementResponseStatus.rejected) 'rejectionReason': rejectionReason!.trim(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'viewed': false,
+        if (announcement.responseStatus != null) {
+          throw StateError('Esta tarefa ja foi respondida.');
+        }
+
+        final alertRef = _firestore.collection(FirestorePaths.adminAlerts).doc();
+        transaction.set(alertRef, {
+          'announcementId': announcementId,
+          'driverId': driver.id,
+          'driverName': driver.name,
+          'message': announcement.message,
+          'responseStatus': status.name,
+          'isGroupTask': announcement.isGroupTask,
+          if (status == AnnouncementResponseStatus.rejected) 'rejectionReason': rejectionReason!.trim(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'viewed': false,
+        });
+
+        transaction.delete(docRef);
       });
-
-      batch.delete(doc.reference);
-
-      await batch.commit();
       return null;
+    } on StateError catch (error) {
+      return error.message;
     } on FirebaseException catch (error) {
-      return error.message ?? 'Erro ao responder lembrete.';
+      return error.message ?? 'Erro ao responder tarefa.';
     }
   }
 
@@ -316,7 +330,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<VehicleChecklist?> getTodayChecklist(AppUser driver, String vehicleId) async {
-    if (driver.role != UserRole.driver) return null;
+    if (!driver.mustCompleteVehicleChecklist) return null;
 
     final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicleId);
     final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
@@ -339,7 +353,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<VehicleChecklist>> watchTodayChecklistsForDriver(AppUser driver) {
-    if (driver.role != UserRole.driver) return Stream.value(const <VehicleChecklist>[]);
+    if (!driver.mustCompleteVehicleChecklist) return Stream.value(const <VehicleChecklist>[]);
 
     return _firestore
         .collection(FirestorePaths.vehicleChecklists)
@@ -357,7 +371,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
     String? notes,
     required String signatureBase64,
   }) async {
-    if (driver.role != UserRole.driver) return 'Somente motoristas podem registrar checklist.';
+    if (!driver.mustCompleteVehicleChecklist) {
+      return 'Somente motoristas e administradores podem registrar checklist.';
+    }
 
     final authUser = _auth.currentUser;
     if (authUser == null) return 'Sessao expirada. Faca login novamente.';
