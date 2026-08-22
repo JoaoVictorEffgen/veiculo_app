@@ -189,6 +189,7 @@ class FleetAdminAlert {
     this.rejectionReason,
     this.viewed = false,
     this.viewedAt,
+    this.isGroupTask = false,
   });
 
   final String id;
@@ -201,6 +202,7 @@ class FleetAdminAlert {
   final DateTime createdAt;
   final bool viewed;
   final DateTime? viewedAt;
+  final bool isGroupTask;
 
   bool get isRejected => responseStatus == AnnouncementResponseStatus.rejected;
 }

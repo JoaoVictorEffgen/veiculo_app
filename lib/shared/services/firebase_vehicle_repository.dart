@@ -233,6 +233,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
     }
 
     try {
+      final authUid = _auth.currentUser?.uid;
+      if (authUid == null) return 'Sessao expirada. Faca login novamente.';
+      if (authUid != driver.id) return 'Sessao invalida. Faca login novamente.';
+
       await _firestore.runTransaction((transaction) async {
         final docRef = _firestore.collection(FirestorePaths.announcements).doc(announcementId);
         final doc = await transaction.get(docRef);
@@ -247,20 +251,18 @@ class FirebaseVehicleRepository implements VehicleRepository {
           if (status != AnnouncementResponseStatus.completed) {
             throw StateError('Tarefas para todos so podem ser concluidas.');
           }
-        } else {
-          if (announcement.targetDriverId != driver.id) {
-            throw StateError('Esta tarefa nao foi destinada a voce.');
-          }
+        } else if (announcement.targetDriverId != driver.id) {
+          throw StateError('Esta tarefa nao foi destinada a voce.');
         }
 
-        if (announcement.responseStatus != null) {
+        if (!announcement.isPendingResponse) {
           throw StateError('Esta tarefa ja foi respondida.');
         }
 
         final alertRef = _firestore.collection(FirestorePaths.adminAlerts).doc();
         transaction.set(alertRef, {
           'announcementId': announcementId,
-          'driverId': driver.id,
+          'driverId': authUid,
           'driverName': driver.name,
           'message': announcement.message,
           'responseStatus': status.name,
@@ -270,12 +272,21 @@ class FirebaseVehicleRepository implements VehicleRepository {
           'viewed': false,
         });
 
-        transaction.delete(docRef);
+        transaction.update(docRef, {
+          'active': false,
+          'responseStatus': status.name,
+          'respondedAt': FieldValue.serverTimestamp(),
+          'respondedByName': driver.name,
+          if (status == AnnouncementResponseStatus.rejected) 'rejectionReason': rejectionReason!.trim(),
+        });
       });
       return null;
     } on StateError catch (error) {
       return error.message;
     } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') {
+        return 'Sem permissao para concluir a tarefa. Tente sair e entrar novamente.';
+      }
       return error.message ?? 'Erro ao responder tarefa.';
     }
   }
@@ -838,6 +849,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       viewed: data['viewed'] as bool? ?? false,
       viewedAt: (data['viewedAt'] as Timestamp?)?.toDate(),
+      isGroupTask: data['isGroupTask'] as bool? ?? false,
     );
   }
 

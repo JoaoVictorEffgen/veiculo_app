@@ -145,7 +145,9 @@ class _AdminAlertCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$statusLabel • ${alert.driverName}',
+                  alert.isGroupTask
+                      ? 'Tarefa geral concluida • ${alert.driverName}'
+                      : '$statusLabel • ${alert.driverName}',
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                 ),
                 const SizedBox(height: 4),

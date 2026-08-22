@@ -104,9 +104,10 @@ class AnnouncementNotificationService {
       _knownAlertIds.add(alert.id);
 
       final statusLabel = alert.responseStatus == AnnouncementResponseStatus.completed ? 'concluiu' : 'recusou';
+      final taskLabel = alert.isGroupTask ? 'Tarefa geral' : 'Tarefa';
       final body = alert.isRejected && alert.rejectionReason != null
-          ? '${alert.driverName} $statusLabel: ${alert.message}\nMotivo: ${alert.rejectionReason}'
-          : '${alert.driverName} $statusLabel: ${alert.message}';
+          ? '${alert.driverName} $statusLabel ($taskLabel): ${alert.message}\nMotivo: ${alert.rejectionReason}'
+          : '${alert.driverName} $statusLabel ($taskLabel): ${alert.message}';
 
       unawaited(_showNotification(
         title: 'Resposta da tarefa',

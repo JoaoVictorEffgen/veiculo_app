@@ -48,7 +48,8 @@ service cloud.firestore {
     function isDriverAnnouncementResponse() {
       return isSignedIn()
         && resource.data.targetDriverId == request.auth.uid
-        && resource.data.responseStatus == null
+        && resource.data.get('responseStatus', null) == null
+        && announcementIsActive(resource.data)
         && request.resource.data.active == false
         && request.resource.data.responseStatus in ['completed', 'rejected']
         && request.resource.data.diff(resource.data).affectedKeys()
@@ -63,23 +64,46 @@ service cloud.firestore {
         );
     }
 
-    function isDriverAdminAlertCreate() {
+    function isGroupAnnouncementData(data) {
+      return !('targetDriverId' in data) || data.targetDriverId == null;
+    }
+
+    function announcementIsActive(data) {
+      return data.get('active', true) == true;
+    }
+
+    function isDriverCompletingGroupTaskUpdate() {
       return isSignedIn()
-        && request.resource.data.driverId == request.auth.uid
-        && request.resource.data.viewed == false
-        && request.resource.data.responseStatus in ['completed', 'rejected'];
+        && isGroupAnnouncementData(resource.data)
+        && announcementIsActive(resource.data)
+        && resource.data.get('responseStatus', null) == null
+        && request.resource.data.active == false
+        && request.resource.data.responseStatus == 'completed'
+        && request.resource.data.respondedByName is string
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['active', 'responseStatus', 'respondedAt', 'respondedByName']);
     }
 
     function isDriverCompletingGroupTask() {
       return isSignedIn()
-        && resource.data.targetDriverId == null
-        && resource.data.active == true;
+        && isGroupAnnouncementData(resource.data)
+        && announcementIsActive(resource.data);
+    }
+
+    function isDriverAdminAlertCreate() {
+      return isSignedIn()
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.driverName is string
+        && request.resource.data.message is string
+        && request.resource.data.announcementId is string
+        && request.resource.data.viewed == false
+        && request.resource.data.responseStatus in ['completed', 'rejected'];
     }
 
     function isDriverDeletingOwnReminder() {
       return isSignedIn()
         && resource.data.targetDriverId == request.auth.uid
-        && resource.data.active == true;
+        && announcementIsActive(resource.data);
     }
 
     function isDriverChecklistCreate(checklistId) {
@@ -132,7 +156,7 @@ service cloud.firestore {
     match /announcements/{announcementId} {
       allow read: if isSignedIn();
       allow create: if isAdmin();
-      allow update: if isAdmin() || isDriverAnnouncementResponse();
+      allow update: if isAdmin() || isDriverAnnouncementResponse() || isDriverCompletingGroupTaskUpdate();
       allow delete: if isAdmin() || (isSignedIn() && isExpiredAnnouncement()) || isDriverDeletingOwnReminder() || isDriverCompletingGroupTask();
     }
 
