@@ -13,6 +13,8 @@ abstract final class LocationTrackingConfig {
   static const distanceFilterMeters = 0;
   static const staleAfter = Duration(seconds: 20);
   static const watchdogInterval = Duration(seconds: 10);
+  static const minStepMeters = 12;
+  static const maxStepMeters = 400;
 }
 
 class LocationTrackingService {
@@ -28,9 +30,17 @@ class LocationTrackingService {
   Position? _lastPosition;
   DateTime? _lastPositionAt;
   DateTime? _lastPublishAt;
+  double _sessionDistanceMeters = 0;
 
   bool get isTracking => _subscription != null;
   String? get permissionIssue => _permissionIssue;
+  double get sessionDistanceKm => _sessionDistanceMeters / 1000;
+
+  double consumeSessionDistanceKm() {
+    final km = double.parse(sessionDistanceKm.toStringAsFixed(2));
+    _sessionDistanceMeters = 0;
+    return km;
+  }
 
   Future<bool> ensurePermission({bool requireBackground = true}) async {
     _permissionIssue = null;
@@ -107,6 +117,7 @@ class LocationTrackingService {
     _activeUser = user;
     _activeVehicle = vehicle;
     _lastPublishAt = null;
+    _sessionDistanceMeters = 0;
 
     final settings = _buildLocationSettings(vehicleName: vehicle.name);
 
@@ -169,6 +180,7 @@ class LocationTrackingService {
     _lastPosition = null;
     _lastPositionAt = null;
     _lastPublishAt = null;
+    _sessionDistanceMeters = 0;
 
     if (driverId == null) return;
 
@@ -249,6 +261,7 @@ class LocationTrackingService {
     if (user == null || vehicle == null || _activeDriverId != user.id) return;
 
     final speedKmh = _resolveSpeedKmh(position);
+    _accumulateDistance(position);
 
     try {
       await _firestore.collection(FirestorePaths.tracking).doc(user.id).set({
@@ -259,6 +272,7 @@ class LocationTrackingService {
         'latitude': position.latitude,
         'longitude': position.longitude,
         'speedKmh': double.parse(speedKmh.toStringAsFixed(1)),
+        'sessionDistanceKm': double.parse(sessionDistanceKm.toStringAsFixed(2)),
         'accuracy': position.accuracy,
         'heading': position.heading,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -270,6 +284,23 @@ class LocationTrackingService {
 
     _lastPosition = position;
     _lastPositionAt = position.timestamp;
+  }
+
+  void _accumulateDistance(Position position) {
+    final previous = _lastPosition;
+    if (previous == null) return;
+
+    final meters = Geolocator.distanceBetween(
+      previous.latitude,
+      previous.longitude,
+      position.latitude,
+      position.longitude,
+    );
+
+    if (meters >= LocationTrackingConfig.minStepMeters &&
+        meters <= LocationTrackingConfig.maxStepMeters) {
+      _sessionDistanceMeters += meters;
+    }
   }
 
   Future<void> openPermissionSettings() => Geolocator.openAppSettings();

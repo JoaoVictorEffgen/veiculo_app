@@ -80,18 +80,41 @@ class NamedDuration {
   final Duration duration;
 }
 
+class NamedKm {
+  const NamedKm({required this.id, required this.name, required this.km});
+  final String id;
+  final String name;
+  final double km;
+}
+
+class DailyKmPoint {
+  const DailyKmPoint({required this.date, required this.km});
+  final DateTime date;
+  final double km;
+}
+
 class FleetAnalyticsReport {
   const FleetAnalyticsReport({
     required this.period,
     required this.utilizationByVehicle,
     required this.movingTimeByDriver,
+    required this.kmByDriver,
+    required this.kmByVehicle,
+    required this.dailyKmTrend,
+    required this.totalKm,
     required this.topVehicle,
     required this.topDriver,
+    required this.topDriverByKm,
   });
 
   final DateTimeRange period;
   final List<NamedCount> utilizationByVehicle;
   final List<NamedDuration> movingTimeByDriver;
+  final List<NamedKm> kmByDriver;
+  final List<NamedKm> kmByVehicle;
+  final List<DailyKmPoint> dailyKmTrend;
+  final double totalKm;
   final NamedCount? topVehicle;
   final NamedDuration? topDriver;
+  final NamedKm? topDriverByKm;
 }

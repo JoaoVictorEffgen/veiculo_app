@@ -44,7 +44,7 @@ abstract class VehicleRepository {
   });
   Stream<List<VehicleChecklist>> watchTodayChecklistsForDriver(AppUser driver);
   Stream<List<VehicleChecklist>> watchVehicleChecklists(AppUser user);
-  Future<String?> stopVehicle(String vehicleId, AppUser user, String location);
+  Future<String?> stopVehicle(String vehicleId, AppUser user, String location, {double? distanceKm});
 
   Future<String?> addVehicle(AppUser actor, {required String name, required String model, required String plate});
   Future<String?> editVehicle(AppUser actor, {required String vehicleId, required String name, required String model, required String plate});

@@ -68,8 +68,8 @@ class VehicleController extends StateNotifier<List<Vehicle>> {
     return error;
   }
 
-  Future<String?> stop(String vehicleId, AppUser user, String location) async {
-    final error = await _repository.stopVehicle(vehicleId, user, location);
+  Future<String?> stop(String vehicleId, AppUser user, String location, {double? distanceKm}) async {
+    final error = await _repository.stopVehicle(vehicleId, user, location, distanceKm: distanceKm);
     if (error == null) await refresh();
     return error;
   }

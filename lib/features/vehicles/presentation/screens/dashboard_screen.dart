@@ -398,9 +398,21 @@ class _VehicleCard extends StatelessWidget {
     );
     controller.dispose();
     if (location == null || !context.mounted) return;
-    final error = await ref.read(vehicleControllerProvider.notifier).stop(vehicle.id, user!, location);
+    final distanceKm = ref.read(locationTrackingServiceProvider).consumeSessionDistanceKm();
+    final error = await ref.read(vehicleControllerProvider.notifier).stop(
+          vehicle.id,
+          user!,
+          location,
+          distanceKm: distanceKm > 0 ? distanceKm : null,
+        );
     if (error != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    if (context.mounted && distanceKm > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Corrida registrada: ${distanceKm.toStringAsFixed(1)} km')),
+      );
     }
   }
 }

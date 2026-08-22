@@ -107,19 +107,14 @@ class _AnimatedLoginHeader extends StatefulWidget {
 class _AnimatedLoginHeaderState extends State<_AnimatedLoginHeader> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _drive;
-  late final Animation<double> _bounce;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 2800))..repeat();
-    _drive = Tween<double>(begin: -1, end: 1).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-    _bounce = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0, end: -3), weight: 25),
-      TweenSequenceItem(tween: Tween(begin: -3, end: 0), weight: 25),
-      TweenSequenceItem(tween: Tween(begin: 0, end: -2), weight: 25),
-      TweenSequenceItem(tween: Tween(begin: -2, end: 0), weight: 25),
-    ]).animate(_controller);
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 5200))..repeat(reverse: true);
+    _drive = Tween<double>(begin: -1, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOutCubic),
+    );
   }
 
   @override
@@ -142,7 +137,7 @@ class _AnimatedLoginHeaderState extends State<_AnimatedLoginHeader> with SingleT
             height: 80,
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final travel = constraints.maxWidth * 0.28;
+                final travel = constraints.maxWidth * 0.22;
                 return AnimatedBuilder(
                   animation: _controller,
                   builder: (context, child) {
@@ -179,7 +174,7 @@ class _AnimatedLoginHeaderState extends State<_AnimatedLoginHeader> with SingleT
                           ),
                         ),
                         Transform.translate(
-                          offset: Offset(_drive.value * travel, _bounce.value),
+                          offset: Offset(_drive.value * travel, 0),
                           child: child,
                         ),
                       ],

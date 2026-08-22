@@ -143,7 +143,7 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   }
 
   @override
-  Future<String?> stopVehicle(String vehicleId, AppUser user, String location) async {
+  Future<String?> stopVehicle(String vehicleId, AppUser user, String location, {double? distanceKm}) async {
     try {
       _local.stopVehicle(vehicleId, user, location);
       _sync();

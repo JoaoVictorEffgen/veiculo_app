@@ -81,6 +81,7 @@ class Movement {
     required this.action,
     required this.createdAt,
     this.location,
+    this.distanceKm,
   });
 
   final String id;
@@ -91,6 +92,7 @@ class Movement {
   final MovementAction action;
   final DateTime createdAt;
   final String? location;
+  final double? distanceKm;
 }
 
 class DriverTrack {

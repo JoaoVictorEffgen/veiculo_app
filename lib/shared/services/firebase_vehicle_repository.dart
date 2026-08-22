@@ -478,7 +478,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   @override
-  Future<String?> stopVehicle(String vehicleId, AppUser user, String location) async {
+  Future<String?> stopVehicle(String vehicleId, AppUser user, String location, {double? distanceKm}) async {
     final authUser = _auth.currentUser;
     if (authUser == null) return 'Sessao expirada. Faca login novamente.';
     if (authUser.uid != user.id) return 'Sessao invalida. Faca login novamente.';
@@ -512,6 +512,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
           'action': MovementAction.off.name,
           'createdAt': now,
           'location': location.trim(),
+          if (distanceKm != null && distanceKm > 0) 'distanceKm': double.parse(distanceKm.toStringAsFixed(2)),
         });
       });
       return null;
@@ -766,6 +767,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       action: MovementAction.values.byName(data['action'] as String),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       location: data['location'] as String?,
+      distanceKm: (data['distanceKm'] as num?)?.toDouble(),
     );
   }
 
