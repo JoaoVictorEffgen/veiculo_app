@@ -217,10 +217,10 @@ class _ChecklistDetailSheet extends StatelessWidget {
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: () async {
-                          final file = await pdfService.download(checklist);
+                          final savedPath = await pdfService.download(checklist);
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('PDF salvo em: ${file.path}')),
+                              SnackBar(content: Text('PDF salvo: $savedPath')),
                             );
                           }
                         },
