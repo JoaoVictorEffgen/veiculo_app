@@ -370,20 +370,29 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final itemMap = {for (final item in VehicleChecklistConfig.items) item.id: items[item.id] == true};
 
     try {
-      await docRef.create({
-        'driverId': driver.id,
-        'driverName': driver.name,
-        'vehicleId': vehicle.id,
-        'vehicleName': vehicle.name,
-        'vehiclePlate': vehicle.plate,
-        'vehicleModel': vehicle.model,
-        'checklistDate': checklistDateKey(),
-        'items': itemMap,
-        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
-        'signatureBase64': signatureBase64.trim(),
-        'completedAt': FieldValue.serverTimestamp(),
+      await _firestore.runTransaction((transaction) async {
+        final existing = await transaction.get(docRef);
+        if (existing.exists) throw StateError('already-exists');
+        transaction.set(docRef, {
+          'driverId': driver.id,
+          'driverName': driver.name,
+          'vehicleId': vehicle.id,
+          'vehicleName': vehicle.name,
+          'vehiclePlate': vehicle.plate,
+          'vehicleModel': vehicle.model,
+          'checklistDate': checklistDateKey(),
+          'items': itemMap,
+          if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+          'signatureBase64': signatureBase64.trim(),
+          'completedAt': FieldValue.serverTimestamp(),
+        });
       });
       return null;
+    } on StateError catch (error) {
+      if (error.message == 'already-exists') {
+        return 'Checklist deste veiculo ja foi feito hoje.';
+      }
+      rethrow;
     } on FirebaseException catch (error) {
       if (error.code == 'already-exists') {
         return 'Checklist deste veiculo ja foi feito hoje.';
