@@ -53,5 +53,7 @@ abstract class VehicleRepository {
   Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, String? password});
   Future<String?> deleteDriver(AppUser actor, String driverId);
 
+  Future<void> purgeOrphanedTracking(List<String> driverIds);
+
   Future<void> ensureSeedData();
 }

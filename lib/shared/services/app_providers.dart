@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/app_models.dart';
 import '../models/auth_session.dart';
 import '../models/fleet_analytics.dart';
+import 'driver_track_filter.dart';
 import 'fleet_analytics_service.dart';
 import 'location_tracking_service.dart';
 import 'vehicle_repository.dart';
@@ -153,9 +154,52 @@ final usersProvider = StreamProvider<List<AppUser>>((ref) {
   return ref.watch(repositoryProvider).watchUsers();
 });
 
-final driverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
+final rawDriverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
   return ref.watch(repositoryProvider).watchDriverTracks();
 });
+
+final driverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
+  final repo = ref.watch(repositoryProvider);
+  return _activeDriverTracksStream(repo);
+});
+
+Stream<List<DriverTrack>> _activeDriverTracksStream(VehicleRepository repo) {
+  final controller = StreamController<List<DriverTrack>>();
+  var tracks = const <DriverTrack>[];
+  var vehicles = const <Vehicle>[];
+
+  void publish() {
+    if (!controller.isClosed) {
+      controller.add(DriverTrackFilter.activeOnly(tracks, vehicles));
+    }
+  }
+
+  late final StreamSubscription<List<DriverTrack>> tracksSub;
+  late final StreamSubscription<List<Vehicle>> vehiclesSub;
+
+  tracksSub = repo.watchDriverTracks().listen(
+        (value) {
+          tracks = value;
+          publish();
+        },
+        onError: controller.addError,
+      );
+
+  vehiclesSub = repo.watchVehicles().listen(
+        (value) {
+          vehicles = value;
+          publish();
+        },
+        onError: controller.addError,
+      );
+
+  controller.onCancel = () async {
+    await tracksSub.cancel();
+    await vehiclesSub.cancel();
+  };
+
+  return controller.stream;
+}
 
 final fleetAnnouncementsProvider = StreamProvider<List<FleetAnnouncement>>((ref) {
   final user = ref.watch(authControllerProvider).user;

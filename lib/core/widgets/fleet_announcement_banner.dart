@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../core/utils/date_formatter.dart';
+import '../../core/utils/iterable_extensions.dart';
 import '../../shared/models/app_models.dart';
 import '../../shared/services/app_providers.dart';
 import 'corporate_ui.dart';
@@ -456,13 +457,5 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
         ],
       ),
     );
-  }
-}
-
-extension _FirstOrNull<E> on Iterable<E> {
-  E? get firstOrNull {
-    final iterator = this.iterator;
-    if (!iterator.moveNext()) return null;
-    return iterator.current;
   }
 }

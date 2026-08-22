@@ -8,6 +8,7 @@ import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/fleet_announcement_banner.dart';
 import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../core/widgets/vehicle_checklist_sheet.dart';
+import '../../../../core/utils/iterable_extensions.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
 

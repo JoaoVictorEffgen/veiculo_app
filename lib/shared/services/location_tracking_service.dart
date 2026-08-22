@@ -6,12 +6,14 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../firebase/firestore_paths.dart';
+import '../../core/utils/iterable_extensions.dart';
 import '../models/app_models.dart';
 
 abstract final class LocationTrackingConfig {
   static const updateInterval = Duration(seconds: 5);
   static const distanceFilterMeters = 0;
   static const staleAfter = Duration(seconds: 20);
+  static const displayMaxAge = Duration(minutes: 3);
   static const watchdogInterval = Duration(seconds: 10);
   static const minStepMeters = 12;
   static const maxStepMeters = 400;
@@ -340,13 +342,5 @@ class LocationTrackingService {
 
   void dispose() {
     unawaited(stopTracking());
-  }
-}
-
-extension _FirstOrNull<E> on Iterable<E> {
-  E? get firstOrNull {
-    final iterator = this.iterator;
-    if (!iterator.moveNext()) return null;
-    return iterator.current;
   }
 }

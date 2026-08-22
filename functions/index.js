@@ -45,7 +45,7 @@ exports.onAnnouncementCreated = functions.firestore
     return admin.messaging().sendEachForMulticast({
       tokens,
       notification: {
-        title: 'Novo lembrete da administracao',
+        title: 'Nova tarefa da administracao',
         body: data.message || 'Voce recebeu um novo aviso.',
       },
       data: {
@@ -79,7 +79,7 @@ exports.onAnnouncementUpdated = functions.firestore
     return admin.messaging().sendEachForMulticast({
       tokens,
       notification: {
-        title: 'Resposta do lembrete',
+        title: 'Resposta da tarefa',
         body: `${driverName} ${statusLabel}: ${after.message || ''}`,
       },
       data: {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,8 +10,10 @@ import '../../../../core/widgets/admin_only_gate.dart';
 import '../../../../core/widgets/corporate_ui.dart';
 import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/utils/iterable_extensions.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
+import '../../../../shared/services/driver_track_filter.dart';
 
 class TrackingScreen extends ConsumerStatefulWidget {
   const TrackingScreen({super.key});
@@ -20,10 +24,38 @@ class TrackingScreen extends ConsumerStatefulWidget {
 
 class _TrackingScreenState extends ConsumerState<TrackingScreen> {
   final _mapController = MapController();
+  DateTime? _lastPurgeAt;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _purgeStaleTracks());
+  }
+
+  Future<void> _purgeStaleTracks() async {
+    final now = DateTime.now();
+    if (_lastPurgeAt != null && now.difference(_lastPurgeAt!) < const Duration(seconds: 30)) {
+      return;
+    }
+
+    final tracks = ref.read(rawDriverTracksProvider).valueOrNull;
+    if (tracks == null || tracks.isEmpty) return;
+
+    final vehicles = ref.read(vehicleControllerProvider);
+    final orphanIds = DriverTrackFilter.orphanDriverIds(tracks, vehicles);
+    if (orphanIds.isEmpty) return;
+
+    _lastPurgeAt = now;
+    await ref.read(repositoryProvider).purgeOrphanedTracking(orphanIds);
+  }
 
   @override
   Widget build(BuildContext context) {
     final tracksAsync = ref.watch(driverTracksProvider);
+
+    ref.listen<AsyncValue<List<DriverTrack>>>(rawDriverTracksProvider, (_, __) {
+      unawaited(_purgeStaleTracks());
+    });
 
     ref.listen<AsyncValue<List<DriverTrack>>>(driverTracksProvider, (previous, next) {
       final tracks = next.valueOrNull;
@@ -42,8 +74,8 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
             if (tracks.isEmpty) {
               return const CorporateEmptyState(
                 icon: Icons.map_outlined,
-                message: 'Nenhum motorista em movimento com GPS ativo no momento.\n\n'
-                    'O motorista precisa estar com veiculo INICIADO e permitir localizacao no celular.',
+                message: 'Nenhum veiculo em movimento no momento.\n\n'
+                    'O mapa so mostra motoristas com veiculo INICIADO e GPS atualizado nos ultimos minutos.',
               );
             }
 
@@ -55,7 +87,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: CorporatePageHeader(
                     title: 'Monitoramento em tempo real',
-                    subtitle: '${tracks.length} motorista(s) com GPS ativo',
+                    subtitle: '${tracks.length} veiculo(s) em movimento com GPS ativo',
                   ),
                 ),
                 Expanded(

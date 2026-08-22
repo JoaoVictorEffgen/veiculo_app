@@ -542,6 +542,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
           if (distanceKm != null && distanceKm > 0) 'distanceKm': double.parse(distanceKm.toStringAsFixed(2)),
         });
       });
+      unawaited(_deleteTrackingDoc(driverId));
       return null;
     } on StateError catch (error) {
       return error.message;
@@ -549,6 +550,31 @@ class FirebaseVehicleRepository implements VehicleRepository {
       return error.message ?? 'Erro ao parar veiculo.';
     } catch (error) {
       return 'Erro ao parar veiculo: $error';
+    }
+  }
+
+  @override
+  Future<void> purgeOrphanedTracking(List<String> driverIds) async {
+    if (driverIds.isEmpty) return;
+
+    final uniqueIds = driverIds.toSet();
+    final batch = _firestore.batch();
+    for (final driverId in uniqueIds) {
+      batch.delete(_firestore.collection(FirestorePaths.tracking).doc(driverId));
+    }
+
+    try {
+      await batch.commit();
+    } on FirebaseException catch (error) {
+      debugPrint('Falha ao limpar rastros GPS orfaos: ${error.message}');
+    }
+  }
+
+  Future<void> _deleteTrackingDoc(String driverId) async {
+    try {
+      await _firestore.collection(FirestorePaths.tracking).doc(driverId).delete();
+    } catch (error) {
+      debugPrint('GPS: falha ao remover tracking do motorista $driverId: $error');
     }
   }
 
@@ -808,7 +834,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       latitude: (data['latitude'] as num).toDouble(),
       longitude: (data['longitude'] as num).toDouble(),
       speedKmh: (data['speedKmh'] as num).toDouble(),
-      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0),
       accuracy: (data['accuracy'] as num?)?.toDouble(),
       heading: (data['heading'] as num?)?.toDouble(),
     );
