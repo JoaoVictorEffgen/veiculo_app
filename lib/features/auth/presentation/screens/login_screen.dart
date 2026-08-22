@@ -51,30 +51,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Column(
-                      children: [
-                        Icon(Icons.local_shipping_rounded, size: 56, color: Colors.white),
-                        SizedBox(height: 12),
-                        Text(
-                          'Controle de Veiculos',
-                          style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
-                          textAlign: TextAlign.center,
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          'Gestao corporativa da frota',
-                          style: TextStyle(color: Colors.white70, fontSize: 14),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
+                  const _AnimatedLoginHeader(),
                   const SizedBox(height: 28),
                   Container(
                     padding: const EdgeInsets.all(20),
@@ -115,6 +92,116 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AnimatedLoginHeader extends StatefulWidget {
+  const _AnimatedLoginHeader();
+
+  @override
+  State<_AnimatedLoginHeader> createState() => _AnimatedLoginHeaderState();
+}
+
+class _AnimatedLoginHeaderState extends State<_AnimatedLoginHeader> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _drive;
+  late final Animation<double> _bounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 2800))..repeat();
+    _drive = Tween<double>(begin: -1, end: 1).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _bounce = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0, end: -3), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: -3, end: 0), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: 0, end: -2), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: -2, end: 0), weight: 25),
+    ]).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 80,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final travel = constraints.maxWidth * 0.28;
+                return AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, child) {
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        Positioned(
+                          left: 20,
+                          right: 20,
+                          bottom: 14,
+                          child: Container(
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 20,
+                          right: 20,
+                          bottom: 12,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: List.generate(
+                              5,
+                              (_) => Container(
+                                width: 10,
+                                height: 2,
+                                color: Colors.white.withValues(alpha: 0.35),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Transform.translate(
+                          offset: Offset(_drive.value * travel, _bounce.value),
+                          child: child,
+                        ),
+                      ],
+                    );
+                  },
+                  child: const Icon(Icons.local_shipping_rounded, size: 56, color: Colors.white),
+                );
+              },
+            ),
+          ),
+          const Text(
+            'Controle de Veiculos',
+            style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Gestao corporativa da frota',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

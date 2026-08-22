@@ -103,10 +103,6 @@ class _ChecklistTile extends StatelessWidget {
                           '${checklist.checklistDate} • ${formatDateTime(checklist.completedAt)}',
                           style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
                         ),
-                        Text(
-                          'ID: ${checklist.id}',
-                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
-                        ),
                         if (checklist.missingItemsCount > 0)
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
