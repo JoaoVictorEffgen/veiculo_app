@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:signature/signature.dart';
 
 import '../../app/theme.dart';
+import '../../features/checklists/presentation/screens/checklist_pdf_viewer_screen.dart';
 import '../../shared/models/app_models.dart';
 import '../../shared/services/app_providers.dart';
 import '../../shared/services/vehicle_checklist_pdf_service.dart';
@@ -122,12 +123,19 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
         title: const Text('Checklist concluido'),
         content: Text(
           'Checklist do ${widget.vehicle.name} registrado com sucesso.\n\n'
-          'Voce pode compartilhar ou baixar o PDF antes de iniciar a corrida.',
+          'Voce pode ver o PDF no app ou acessar depois na aba Checklists.',
         ),
         actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              openChecklistPdfViewer(context, checklist);
+            },
+            child: const Text('Ver PDF no app'),
+          ),
           TextButton(
             onPressed: () async => pdfService.share(checklist),
-            child: const Text('Compartilhar PDF'),
+            child: const Text('Compartilhar'),
           ),
           TextButton(
             onPressed: () async {
@@ -138,9 +146,9 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
                 );
               }
             },
-            child: const Text('Baixar PDF'),
+            child: const Text('Baixar'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Continuar'),
           ),
@@ -292,9 +300,16 @@ Future<void> showChecklistPdfOptions(
       title: const Text('PDF do checklist de hoje'),
       content: Text('Checklist do ${checklist.vehicleName} ja foi feito hoje.'),
       actions: [
+        ElevatedButton(
+          onPressed: () {
+            Navigator.pop(context);
+            openChecklistPdfViewer(context, checklist);
+          },
+          child: const Text('Ver PDF no app'),
+        ),
         TextButton(
           onPressed: () async => pdfService.share(checklist),
-          child: const Text('Compartilhar PDF'),
+          child: const Text('Compartilhar'),
         ),
         TextButton(
           onPressed: () async {
@@ -305,9 +320,9 @@ Future<void> showChecklistPdfOptions(
               );
             }
           },
-          child: const Text('Baixar PDF'),
+          child: const Text('Baixar'),
         ),
-        ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
       ],
     ),
   );

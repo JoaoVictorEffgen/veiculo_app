@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/widgets/main_app_shell.dart';
 import '../core/widgets/splash_screen.dart';
-import '../features/admin/presentation/screens/checklist_history_screen.dart';
+import '../features/checklists/presentation/screens/checklists_screen.dart';
 import '../features/admin/presentation/screens/fleet_dashboard_screen.dart';
 import '../features/admin/presentation/screens/admin_screen.dart';
 import '../features/admin/presentation/screens/tracking_screen.dart';
@@ -82,10 +82,6 @@ String? resolveRedirect(GoRouterState state, AuthSession session) {
     return AppRoutes.dashboard;
   }
 
-  if (location == AppRoutes.checklists && user?.role != UserRole.admin) {
-    return AppRoutes.dashboard;
-  }
-
   return null;
 }
 
@@ -134,7 +130,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoutes.checklists,
-            builder: (context, state) => const ChecklistHistoryScreen(),
+            builder: (context, state) => const ChecklistsScreen(),
           ),
         ],
       ),

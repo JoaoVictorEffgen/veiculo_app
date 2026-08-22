@@ -12,13 +12,20 @@ class MainAppShell extends ConsumerWidget {
 
   final Widget child;
 
-  int _selectedIndex(String location, bool isAdmin) {
+  int _adminSelectedIndex(String location) {
     if (location.startsWith(AppRoutes.fleetDashboard)) return 0;
     if (location.startsWith(AppRoutes.tracking)) return 1;
     if (location.startsWith(AppRoutes.dashboard)) return 2;
-    if (location.startsWith(AppRoutes.alerts)) return 3;
-    if (location.startsWith(AppRoutes.admin) || location.startsWith(AppRoutes.history) || location.startsWith(AppRoutes.checklists)) return 4;
+    if (location.startsWith(AppRoutes.checklists)) return 3;
+    if (location.startsWith(AppRoutes.alerts)) return 4;
+    if (location.startsWith(AppRoutes.admin)) return 5;
     return 2;
+  }
+
+  int _driverSelectedIndex(String location) {
+    if (location.startsWith(AppRoutes.checklists)) return 1;
+    if (location.startsWith(AppRoutes.history)) return 2;
+    return 0;
   }
 
   @override
@@ -26,20 +33,20 @@ class MainAppShell extends ConsumerWidget {
     final user = ref.watch(authControllerProvider).user;
     final isAdmin = user?.role == UserRole.admin;
     final location = GoRouterState.of(context).matchedLocation;
-    final selected = _selectedIndex(location, isAdmin);
     final unreadAlerts = isAdmin ? ref.watch(unreadAdminAlertsCountProvider) : 0;
 
     return Scaffold(
       body: child,
       bottomNavigationBar: isAdmin
           ? _AdminBottomNav(
-              selectedIndex: selected,
+              selectedIndex: _adminSelectedIndex(location),
               unreadAlerts: unreadAlerts,
               onTap: (index) => _onAdminTap(context, index),
             )
           : _DriverBottomNav(
-              location: location,
+              selectedIndex: _driverSelectedIndex(location),
               onVehicles: () => context.go(AppRoutes.dashboard),
+              onChecklists: () => context.go(AppRoutes.checklists),
               onHistory: () => context.go(AppRoutes.history),
             ),
     );
@@ -54,8 +61,10 @@ class MainAppShell extends ConsumerWidget {
       case 2:
         context.go(AppRoutes.dashboard);
       case 3:
-        context.go(AppRoutes.alerts);
+        context.go(AppRoutes.checklists);
       case 4:
+        context.go(AppRoutes.alerts);
+      case 5:
         context.go(AppRoutes.admin);
     }
   }
@@ -107,19 +116,26 @@ class _AdminBottomNav extends StatelessWidget {
                 onTap: () => onTap(2),
               ),
               _NavItem(
+                icon: Icons.checklist_rtl,
+                selectedIcon: Icons.checklist_rtl,
+                label: 'Checklists',
+                selected: selectedIndex == 3,
+                onTap: () => onTap(3),
+              ),
+              _NavItem(
                 icon: Icons.notifications_outlined,
                 selectedIcon: Icons.notifications,
                 label: 'Alertas',
-                selected: selectedIndex == 3,
+                selected: selectedIndex == 4,
                 badgeCount: unreadAlerts,
-                onTap: () => onTap(3),
+                onTap: () => onTap(4),
               ),
               _NavItem(
                 icon: Icons.menu,
                 selectedIcon: Icons.menu_open,
                 label: 'Menu',
-                selected: selectedIndex == 4,
-                onTap: () => onTap(4),
+                selected: selectedIndex == 5,
+                onTap: () => onTap(5),
               ),
             ],
           ),
@@ -131,18 +147,19 @@ class _AdminBottomNav extends StatelessWidget {
 
 class _DriverBottomNav extends StatelessWidget {
   const _DriverBottomNav({
-    required this.location,
+    required this.selectedIndex,
     required this.onVehicles,
+    required this.onChecklists,
     required this.onHistory,
   });
 
-  final String location;
+  final int selectedIndex;
   final VoidCallback onVehicles;
+  final VoidCallback onChecklists;
   final VoidCallback onHistory;
 
   @override
   Widget build(BuildContext context) {
-    final onVehiclesTab = location.startsWith(AppRoutes.dashboard);
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -158,14 +175,21 @@ class _DriverBottomNav extends StatelessWidget {
                 icon: Icons.directions_car_outlined,
                 selectedIcon: Icons.directions_car_filled,
                 label: 'Veiculos',
-                selected: onVehiclesTab,
+                selected: selectedIndex == 0,
                 onTap: onVehicles,
+              ),
+              _NavItem(
+                icon: Icons.checklist_rtl,
+                selectedIcon: Icons.checklist_rtl,
+                label: 'Checklists',
+                selected: selectedIndex == 1,
+                onTap: onChecklists,
               ),
               _NavItem(
                 icon: Icons.history,
                 selectedIcon: Icons.history,
                 label: 'Historico',
-                selected: location.startsWith(AppRoutes.history),
+                selected: selectedIndex == 2,
                 onTap: onHistory,
               ),
             ],
