@@ -370,10 +370,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final itemMap = {for (final item in VehicleChecklistConfig.items) item.id: items[item.id] == true};
 
     try {
-      final existing = await docRef.get();
-      if (existing.exists) return 'Checklist deste veiculo ja foi feito hoje.';
-
-      await docRef.set({
+      await docRef.create({
         'driverId': driver.id,
         'driverName': driver.name,
         'vehicleId': vehicle.id,
@@ -388,6 +385,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
       });
       return null;
     } on FirebaseException catch (error) {
+      if (error.code == 'already-exists') {
+        return 'Checklist deste veiculo ja foi feito hoje.';
+      }
       return error.message ?? 'Erro ao salvar checklist.';
     } catch (error) {
       return 'Erro ao salvar checklist: $error';
