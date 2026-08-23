@@ -9,7 +9,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:label="vehicle_control_app"
+        android:label="Controle de Veiculos"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <service

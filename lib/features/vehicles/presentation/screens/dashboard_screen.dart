@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme.dart';
 import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/utils/loading_dialog.dart';
 import '../../../../core/widgets/fleet_announcement_banner.dart';
 import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../core/widgets/vehicle_checklist_sheet.dart';
@@ -309,35 +310,14 @@ class _VehicleCard extends StatelessWidget {
   Future<void> _stop(BuildContext context) async {
     if (!context.mounted) return;
 
-    unawaited(
-      showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Expanded(child: Text('Obtendo localizacao atual...')),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    String? detected;
-    try {
-      detected = await ref
+    final detected = await runWithBlockingLoadingDialog<String?>(
+      context,
+      message: 'Obtendo localizacao atual...',
+      action: () => ref
           .read(locationTrackingServiceProvider)
           .resolveCurrentLocationLabel()
-          .timeout(const Duration(seconds: 15));
-    } catch (_) {
-      detected = null;
-    } finally {
-      if (context.mounted && Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-      }
-    }
+          .timeout(const Duration(seconds: 12), onTimeout: () => null),
+    );
 
     if (!context.mounted) return;
 
@@ -378,13 +358,22 @@ class _VehicleCard extends StatelessWidget {
     );
     controller.dispose();
     if (location == null || !context.mounted) return;
+
     final distanceKm = ref.read(locationTrackingServiceProvider).consumeSessionDistanceKm();
-    final error = await ref.read(vehicleControllerProvider.notifier).stop(
-          vehicle.id,
-          user!,
-          location,
-          distanceKm: distanceKm > 0 ? distanceKm : null,
-        );
+    final error = await runWithBlockingLoadingDialog<String?>(
+      context,
+      message: 'Registrando parada...',
+      action: () => ref
+          .read(vehicleControllerProvider.notifier)
+          .stop(
+            vehicle.id,
+            user!,
+            location,
+            distanceKm: distanceKm > 0 ? distanceKm : null,
+          )
+          .timeout(const Duration(seconds: 15), onTimeout: () => 'Tempo esgotado ao registrar parada.'),
+    );
+
     if (error != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
       return;

@@ -313,8 +313,15 @@ class LocationTrackingService {
       if (!granted) return null;
 
       final settings = _buildLocationSettings(vehicleName: _activeVehicle?.name ?? 'Veiculo');
-      final position = await Geolocator.getCurrentPosition(locationSettings: settings);
-      return await _formatLocationLabel(position);
+      final position = await Geolocator.getCurrentPosition(locationSettings: settings).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException('GPS timeout'),
+      );
+      return await _formatLocationLabel(position).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () =>
+            '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}',
+      );
     } catch (error) {
       debugPrint('GPS: falha ao obter localizacao atual: $error');
       return null;
