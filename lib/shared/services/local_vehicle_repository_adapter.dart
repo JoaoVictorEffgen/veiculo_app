@@ -44,6 +44,11 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   }
 
   @override
+  Future<String?> sendPasswordResetEmail(String email) async {
+    return 'Recuperacao de senha disponivel apenas com Firebase.';
+  }
+
+  @override
   Future<void> logout() async {
     await _local.clearSession();
     _authController.add(null);

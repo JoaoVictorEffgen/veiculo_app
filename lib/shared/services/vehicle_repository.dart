@@ -5,6 +5,7 @@ abstract class VehicleRepository {
   Stream<AppUser?> get authStateChanges;
 
   Future<String?> login(String email, String password);
+  Future<String?> sendPasswordResetEmail(String email);
   Future<void> logout();
 
   Stream<List<Vehicle>> watchVehicles();

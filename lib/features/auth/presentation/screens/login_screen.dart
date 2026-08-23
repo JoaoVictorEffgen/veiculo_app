@@ -14,9 +14,34 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
+  static const _linkColor = Color(0xFF2563EB);
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
   bool _loading = false;
+  bool _rememberMe = false;
+  bool _obscurePassword = true;
+  bool _prefsLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final saved = await ref.read(loginPreferencesServiceProvider).load();
+    if (!mounted) return;
+    setState(() {
+      _rememberMe = saved.remember;
+      if (saved.email != null && saved.email!.isNotEmpty) {
+        _emailController.text = saved.email!;
+      }
+      _prefsLoaded = true;
+    });
+  }
 
   @override
   void dispose() {
@@ -26,9 +51,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
     setState(() => _loading = true);
-    final error = await ref.read(authControllerProvider.notifier).login(_emailController.text, _passwordController.text);
+    final email = _emailController.text.trim();
+    final error = await ref.read(authControllerProvider.notifier).login(email, _passwordController.text);
     if (!mounted) return;
+
+    if (error == null) {
+      await ref.read(loginPreferencesServiceProvider).save(remember: _rememberMe, email: email);
+    }
+
     setState(() => _loading = false);
     if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
@@ -38,202 +71,369 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     context.go(AppRoutes.dashboard);
   }
 
+  Future<void> _openForgotPasswordDialog() async {
+    final resetEmailController = TextEditingController(text: _emailController.text.trim());
+    final sent = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Recuperar senha'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Informe o e-mail cadastrado. Enviaremos um link para redefinir sua senha.',
+              style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: resetEmailController,
+              keyboardType: TextInputType.emailAddress,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'E-mail',
+                prefixIcon: Icon(Icons.mail_outline),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () {
+              if (resetEmailController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Informe o e-mail da sua conta.')),
+                );
+                return;
+              }
+              Navigator.pop(context, true);
+            },
+            child: const Text('Enviar link'),
+          ),
+        ],
+      ),
+    );
+
+    final email = resetEmailController.text.trim();
+    resetEmailController.dispose();
+    if (sent != true || !mounted) return;
+
+    setState(() => _loading = true);
+    final error = await ref.read(authControllerProvider.notifier).sendPasswordResetEmail(email);
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Enviamos um link de recuperacao para $email. Verifique sua caixa de entrada.'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const _AnimatedLoginHeader(),
-                  const SizedBox(height: 28),
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.border),
+      backgroundColor: Colors.white,
+      body: Column(
+        children: [
+          const _LoginHeroHeader(),
+          Expanded(
+            child: _prefsLoaded
+                ? SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Acesse sua conta',
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Informe seu e-mail e senha para continuar.',
+                            style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.4),
+                          ),
+                          const SizedBox(height: 24),
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            autofillHints: const [AutofillHints.email],
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) return 'Informe seu e-mail.';
+                              if (!value.contains('@')) return 'Informe um e-mail valido.';
+                              return null;
+                            },
+                            decoration: _fieldDecoration(
+                              hint: 'E-mail',
+                              icon: Icons.person_outline,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            textInputAction: TextInputAction.done,
+                            autofillHints: const [AutofillHints.password],
+                            onFieldSubmitted: (_) => _login(),
+                            validator: (value) {
+                              if (value == null || value.isEmpty) return 'Informe sua senha.';
+                              return null;
+                            },
+                            decoration: _fieldDecoration(
+                              hint: 'Senha',
+                              icon: Icons.lock_outline,
+                              suffix: IconButton(
+                                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                                icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: Checkbox(
+                                  value: _rememberMe,
+                                  activeColor: AppColors.primary,
+                                  onChanged: _loading ? null : (value) => setState(() => _rememberMe = value ?? false),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: _loading ? null : () => setState(() => _rememberMe = !_rememberMe),
+                                child: const Text('Lembrar-me', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                              ),
+                              const Spacer(),
+                              TextButton(
+                                onPressed: _loading ? null : _openForgotPasswordDialog,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: _linkColor,
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text('Esqueci minha senha', style: TextStyle(fontWeight: FontWeight.w600)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 28),
+                          ElevatedButton.icon(
+                            onPressed: _loading ? null : _login,
+                            icon: _loading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.login),
+                            label: Text(_loading ? 'Entrando...' : 'Entrar'),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text('Entre com seu usuario corporativo', textAlign: TextAlign.center),
-                        const SizedBox(height: 24),
-                        TextField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.next,
-                          decoration: const InputDecoration(labelText: 'E-mail', prefixIcon: Icon(Icons.person_outline)),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: _passwordController,
-                          obscureText: true,
-                          onSubmitted: (_) => _login(),
-                          decoration: const InputDecoration(labelText: 'Senha', prefixIcon: Icon(Icons.lock_outline)),
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton.icon(
-                          onPressed: _loading ? null : _login,
-                          icon: const Icon(Icons.login),
-                          label: Text(_loading ? 'Entrando...' : 'Entrar'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                  )
+                : const Center(child: CircularProgressIndicator()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _fieldDecoration({
+    required String hint,
+    required IconData icon,
+    Widget? suffix,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: Icon(icon, color: AppColors.textSecondary),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+      ),
+    );
+  }
+}
+
+class _LoginHeroHeader extends StatelessWidget {
+  const _LoginHeroHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final height = MediaQuery.sizeOf(context).height * 0.36;
+
+    return ClipPath(
+      clipper: _LoginHeaderClipper(),
+      child: SizedBox(
+        height: height.clamp(260, 340),
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primaryDark, AppColors.primary, Color(0xFF243B63)],
+                ),
               ),
             ),
-          ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.08),
+                      Colors.black.withValues(alpha: 0.35),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            CustomPaint(
+              painter: _RoadOverlayPainter(),
+              size: Size.infinite,
+            ),
+            SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 56),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const _TruckBadge(),
+                    const SizedBox(height: 18),
+                    RichText(
+                      textAlign: TextAlign.center,
+                      text: const TextSpan(
+                        style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w700, height: 1.2),
+                        children: [
+                          TextSpan(text: 'Controle de '),
+                          TextSpan(
+                            text: 'Veiculos',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Gestao corporativa da frota',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 15),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _AnimatedLoginHeader extends StatefulWidget {
-  const _AnimatedLoginHeader();
-
-  @override
-  State<_AnimatedLoginHeader> createState() => _AnimatedLoginHeaderState();
-}
-
-class _AnimatedLoginHeaderState extends State<_AnimatedLoginHeader> with SingleTickerProviderStateMixin {
-  static const _vehicleIcons = <IconData>[
-    Icons.local_shipping_rounded,
-    Icons.directions_car_rounded,
-    Icons.directions_bus_rounded,
-    Icons.airport_shuttle_rounded,
-  ];
-
-  static const _iconSize = 52.0;
-  static const _roadPadding = 24.0;
-
-  late final AnimationController _controller;
-  late final Animation<double> _drive;
-  var _vehicleIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 4200),
-    );
-    _drive = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-    _controller.addStatusListener(_onAnimationStatus);
-    _controller.forward();
-  }
-
-  void _onAnimationStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed) return;
-    setState(() => _vehicleIndex = (_vehicleIndex + 1) % _vehicleIcons.length);
-    _controller.forward(from: 0);
-  }
-
-  @override
-  void dispose() {
-    _controller.removeStatusListener(_onAnimationStatus);
-    _controller.dispose();
-    super.dispose();
-  }
+class _TruckBadge extends StatelessWidget {
+  const _TruckBadge();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
+    return SizedBox(
+      height: 72,
+      width: 120,
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          SizedBox(
-            height: 88,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final roadWidth = constraints.maxWidth - (_roadPadding * 2);
-                final maxOffset = roadWidth - _iconSize;
-
-                return AnimatedBuilder(
-                  animation: _drive,
-                  builder: (context, child) {
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Positioned(
-                          left: _roadPadding,
-                          right: _roadPadding,
-                          bottom: 16,
-                          child: Container(
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.22),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: _roadPadding,
-                          right: _roadPadding,
-                          bottom: 14,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: List.generate(
-                              6,
-                              (_) => Container(
-                                width: 14,
-                                height: 2,
-                                color: Colors.white.withValues(alpha: 0.35),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: _roadPadding + (_drive.value * maxOffset),
-                          bottom: 18,
-                          child: child!,
-                        ),
-                      ],
-                    );
-                  },
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 280),
-                    switchInCurve: Curves.easeOut,
-                    switchOutCurve: Curves.easeIn,
-                    transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
-                    child: Icon(
-                      _vehicleIcons[_vehicleIndex],
-                      key: ValueKey(_vehicleIndex),
-                      size: _iconSize,
-                      color: Colors.white,
-                    ),
+          Positioned(
+            left: 8,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                3,
+                (index) => Container(
+                  margin: const EdgeInsets.symmetric(vertical: 3),
+                  width: 22 - (index * 4.0),
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.55 - (index * 0.12)),
+                    borderRadius: BorderRadius.circular(99),
                   ),
-                );
-              },
+                ),
+              ),
             ),
           ),
-          const Text(
-            'Controle de Veiculos',
-            style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Gestao corporativa da frota',
-            style: TextStyle(color: Colors.white70, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
+          const Icon(Icons.local_shipping_rounded, size: 58, color: Colors.white),
         ],
       ),
     );
   }
+}
+
+class _LoginHeaderClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    return Path()
+      ..lineTo(0, size.height - 52)
+      ..lineTo(size.width, size.height - 8)
+      ..lineTo(size.width, 0)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class _RoadOverlayPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.06)
+      ..strokeWidth = 2;
+
+    for (var i = 0; i < 5; i++) {
+      final y = size.height * (0.55 + i * 0.08);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y + 18), paint);
+    }
+
+    final dashPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.18)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    for (var x = 20.0; x < size.width; x += 36) {
+      canvas.drawLine(Offset(x, size.height * 0.78), Offset(x + 18, size.height * 0.78 + 8), dashPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

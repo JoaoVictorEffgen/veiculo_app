@@ -9,11 +9,14 @@ import '../models/fleet_analytics.dart';
 import 'driver_track_filter.dart';
 import 'fleet_analytics_service.dart';
 import 'location_tracking_service.dart';
+import 'login_preferences_service.dart';
 import 'vehicle_repository.dart';
 
 final repositoryProvider = Provider<VehicleRepository>((ref) {
   throw UnimplementedError('repositoryProvider must be overridden in main.dart');
 });
+
+final loginPreferencesServiceProvider = Provider<LoginPreferencesService>((ref) => LoginPreferencesService());
 
 final locationTrackingServiceProvider = Provider<LocationTrackingService>((ref) {
   throw UnimplementedError('locationTrackingServiceProvider must be overridden in main.dart');
@@ -32,6 +35,8 @@ class AuthController extends StateNotifier<AuthSession> {
   AppUser? get user => state.user;
 
   Future<String?> login(String email, String password) => _repository.login(email, password);
+
+  Future<String?> sendPasswordResetEmail(String email) => _repository.sendPasswordResetEmail(email);
 
   Future<void> logout() => _repository.logout();
 

@@ -58,6 +58,26 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   @override
+  Future<String?> sendPasswordResetEmail(String email) async {
+    final normalized = email.trim().toLowerCase();
+    if (normalized.isEmpty) return 'Informe o e-mail da sua conta.';
+
+    try {
+      await _auth.sendPasswordResetEmail(email: normalized);
+      return null;
+    } on FirebaseAuthException catch (error) {
+      switch (error.code) {
+        case 'invalid-email':
+          return 'Informe um e-mail valido.';
+        case 'too-many-requests':
+          return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
+        default:
+          return error.message ?? 'Nao foi possivel enviar o e-mail de recuperacao.';
+      }
+    }
+  }
+
+  @override
   Future<void> logout() async {
     await _auth.signOut();
     _cachedUser = null;
