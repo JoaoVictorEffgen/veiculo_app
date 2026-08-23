@@ -24,13 +24,27 @@ final locationTrackingServiceProvider = Provider<LocationTrackingService>((ref) 
 
 class AuthController extends StateNotifier<AuthSession> {
   AuthController(this._repository) : super(const AuthSession.loading()) {
-    _subscription = _repository.authStateChanges.listen((user) {
-      state = AuthSession.ready(user);
+    _subscription = _repository.authStateChanges.listen(
+      (user) {
+        _bootstrapTimer?.cancel();
+        state = AuthSession.ready(user);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Erro no stream de autenticacao: $error');
+        state = AuthSession.ready(_repository.currentUser);
+      },
+    );
+    _bootstrapTimer = Timer(const Duration(seconds: 8), () {
+      if (!state.isReady) {
+        debugPrint('Timeout de autenticacao — liberando app com sessao em cache.');
+        state = AuthSession.ready(_repository.currentUser);
+      }
     });
   }
 
   final VehicleRepository _repository;
   StreamSubscription<AppUser?>? _subscription;
+  Timer? _bootstrapTimer;
 
   AppUser? get user => state.user;
 
@@ -42,6 +56,7 @@ class AuthController extends StateNotifier<AuthSession> {
 
   @override
   void dispose() {
+    _bootstrapTimer?.cancel();
     _subscription?.cancel();
     super.dispose();
   }
@@ -172,9 +187,11 @@ Stream<List<DriverTrack>> _activeDriverTracksStream(VehicleRepository repo) {
   final controller = StreamController<List<DriverTrack>>();
   var tracks = const <DriverTrack>[];
   var vehicles = const <Vehicle>[];
+  var tracksReady = false;
+  var vehiclesReady = false;
 
   void publish() {
-    if (!controller.isClosed) {
+    if (!controller.isClosed && (tracksReady || vehiclesReady)) {
       controller.add(DriverTrackFilter.activeOnly(tracks, vehicles));
     }
   }
@@ -182,20 +199,34 @@ Stream<List<DriverTrack>> _activeDriverTracksStream(VehicleRepository repo) {
   late final StreamSubscription<List<DriverTrack>> tracksSub;
   late final StreamSubscription<List<Vehicle>> vehiclesSub;
 
+  controller.add(const []);
+
   tracksSub = repo.watchDriverTracks().listen(
         (value) {
           tracks = value;
+          tracksReady = true;
           publish();
         },
-        onError: controller.addError,
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('Erro no stream de rastreamento: $error');
+          tracks = const [];
+          tracksReady = true;
+          publish();
+        },
       );
 
   vehiclesSub = repo.watchVehicles().listen(
         (value) {
           vehicles = value;
+          vehiclesReady = true;
           publish();
         },
-        onError: controller.addError,
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('Erro no stream de veiculos (GPS): $error');
+          vehicles = const [];
+          vehiclesReady = true;
+          publish();
+        },
       );
 
   controller.onCancel = () async {

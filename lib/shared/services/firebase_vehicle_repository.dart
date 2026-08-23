@@ -37,8 +37,14 @@ class FirebaseVehicleRepository implements VehicleRepository {
         yield null;
         continue;
       }
-      _cachedUser = await _loadAppUser(firebaseUser.uid);
-      yield _cachedUser;
+
+      if (_cachedUser?.id == firebaseUser.uid) {
+        yield _cachedUser;
+      }
+
+      final loaded = await _loadAppUser(firebaseUser.uid);
+      _cachedUser = loaded;
+      yield loaded;
     }
   }
 
@@ -797,9 +803,32 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   Future<AppUser?> _loadAppUser(String uid) async {
-    final doc = await _firestore.collection(FirestorePaths.users).doc(uid).get();
-    if (!doc.exists) return null;
-    return _userFromDoc(doc);
+    try {
+      final cached = await _firestore
+          .collection(FirestorePaths.users)
+          .doc(uid)
+          .get(const GetOptions(source: Source.cache))
+          .timeout(const Duration(seconds: 2));
+      if (cached.exists) {
+        return _userFromDoc(cached);
+      }
+    } catch (error) {
+      debugPrint('loadAppUser cache: $error');
+    }
+
+    try {
+      final remote = await _firestore
+          .collection(FirestorePaths.users)
+          .doc(uid)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 10));
+      if (!remote.exists) return null;
+      return _userFromDoc(remote);
+    } catch (error) {
+      debugPrint('loadAppUser remoto: $error');
+      if (_cachedUser?.id == uid) return _cachedUser;
+      return null;
+    }
   }
 
   AppUser _userFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {

@@ -1,7 +1,7 @@
 name: vehicle_control_app
 description: "Aplicativo interno de controle de veículos e motoristas."
 publish_to: 'none'
-version: 0.3.12
+version: 0.3.13
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

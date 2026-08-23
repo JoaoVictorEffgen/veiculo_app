@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,12 +25,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _loading = false;
   bool _rememberMe = false;
   bool _obscurePassword = true;
-  bool _prefsLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    _loadSavedCredentials();
+    unawaited(_loadSavedCredentials());
   }
 
   Future<void> _loadSavedCredentials() async {
@@ -36,10 +37,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!mounted) return;
     setState(() {
       _rememberMe = saved.remember;
-      if (saved.email != null && saved.email!.isNotEmpty) {
+      if (saved.email != null && saved.email!.isNotEmpty && _emailController.text.isEmpty) {
         _emailController.text = saved.email!;
       }
-      _prefsLoaded = true;
     });
   }
 
@@ -144,10 +144,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         children: [
           const _LoginHeroHeader(),
           Expanded(
-            child: _prefsLoaded
-                ? SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-                    child: Form(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+              child: Form(
                       key: _formKey,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -245,8 +244,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ],
                       ),
                     ),
-                  )
-                : const Center(child: CircularProgressIndicator()),
+                  ),
           ),
         ],
       ),
