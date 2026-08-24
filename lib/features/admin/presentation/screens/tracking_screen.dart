@@ -75,9 +75,12 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
               return const CorporateEmptyState(
                 icon: Icons.map_outlined,
                 message: 'Nenhum veiculo em movimento no momento.\n\n'
-                    'O mapa so mostra motoristas com veiculo INICIADO e GPS atualizado nos ultimos minutos.',
+                    'O mapa mostra motoristas com veiculo INICIADO. '
+                    'Se o GPS estiver desatualizado, a ultima posicao ainda aparece com aviso.',
               );
             }
+
+            final staleCount = tracks.where(DriverTrackFilter.isStale).length;
 
             final center = LatLng(tracks.first.latitude, tracks.first.longitude);
 
@@ -87,7 +90,9 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: CorporatePageHeader(
                     title: 'Monitoramento em tempo real',
-                    subtitle: '${tracks.length} veiculo(s) em movimento com GPS ativo',
+                    subtitle: staleCount > 0
+                        ? '${tracks.length} veiculo(s) em movimento ($staleCount com GPS desatualizado)'
+                        : '${tracks.length} veiculo(s) em movimento com GPS ativo',
                   ),
                 ),
                 Expanded(
@@ -129,12 +134,20 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                                             boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26)],
                                           ),
                                           child: Text(
-                                            '${track.driverName}\n${track.speedKmh.toStringAsFixed(0)} km/h',
+                                            DriverTrackFilter.isStale(track)
+                                                ? '${track.driverName}\nGPS desatualizado'
+                                                : '${track.driverName}\n${track.speedKmh.toStringAsFixed(0)} km/h',
                                             textAlign: TextAlign.center,
                                             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                                           ),
                                         ),
-                                        const Icon(Icons.location_on, color: AppColors.statusMoving, size: 32),
+                                        Icon(
+                                          Icons.location_on,
+                                          color: DriverTrackFilter.isStale(track)
+                                              ? AppColors.statusStopped
+                                              : AppColors.statusMoving,
+                                          size: 32,
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -171,6 +184,7 @@ class _TrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final stale = DriverTrackFilter.isStale(track);
     return CorporateSurface(
       child: Row(
         children: [
@@ -178,10 +192,13 @@ class _TrackTile extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: AppColors.statusMovingBg,
+              color: stale ? AppColors.statusStoppedBg : AppColors.statusMovingBg,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.person_pin_circle, color: AppColors.statusMoving),
+            child: Icon(
+              Icons.person_pin_circle,
+              color: stale ? AppColors.statusStopped : AppColors.statusMoving,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -190,6 +207,8 @@ class _TrackTile extends StatelessWidget {
               children: [
                 Text(track.driverName, style: const TextStyle(fontWeight: FontWeight.w700)),
                 Text('${track.vehicleName} • ${formatDateTime(track.updatedAt)}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                if (stale)
+                  const Text('GPS desatualizado — corrida ainda ativa no sistema', style: TextStyle(color: AppColors.statusStopped, fontSize: 12)),
                 Text(
                   '${track.latitude.toStringAsFixed(5)}, ${track.longitude.toStringAsFixed(5)}',
                   style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
@@ -198,8 +217,11 @@ class _TrackTile extends StatelessWidget {
             ),
           ),
           Text(
-            '${track.speedKmh.toStringAsFixed(0)} km/h',
-            style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.statusMoving),
+            stale ? '—' : '${track.speedKmh.toStringAsFixed(0)} km/h',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: stale ? AppColors.statusStopped : AppColors.statusMoving,
+            ),
           ),
         ],
       ),

@@ -69,15 +69,22 @@ final authControllerProvider = StateNotifierProvider<AuthController, AuthSession
 class VehicleController extends StateNotifier<List<Vehicle>> {
   VehicleController(this._repository) : super(const []) {
     _subscription = _repository.watchVehicles().listen(
-      (vehicles) => state = vehicles,
+      (vehicles) {
+        _hasLoaded = true;
+        state = vehicles;
+      },
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('Erro no stream de veiculos: $error');
+        _hasLoaded = true;
       },
     );
   }
 
   final VehicleRepository _repository;
   StreamSubscription<List<Vehicle>>? _subscription;
+  bool _hasLoaded = false;
+
+  bool get hasLoaded => _hasLoaded;
 
   Future<void> refresh() async {
     state = await _repository.fetchVehicles();
@@ -91,8 +98,6 @@ class VehicleController extends StateNotifier<List<Vehicle>> {
 
   Future<String?> stop(String vehicleId, AppUser user, String location, {double? distanceKm}) async {
     final error = await _repository.stopVehicle(vehicleId, user, location, distanceKm: distanceKm);
-    // O stream watchVehicles() ja atualiza a UI; refresh bloqueante aqui
-    // mantinha o dialogo "Registrando parada..." aberto no celular.
     if (error == null) unawaited(refresh());
     return error;
   }
@@ -157,6 +162,23 @@ class AdminController extends StateNotifier<int> {
 
   Future<String?> deleteDriver(AppUser actor, String driverId) async {
     final error = await _repository.deleteDriver(actor, driverId);
+    if (error == null) state++;
+    return error;
+  }
+
+  Future<String?> uploadMaintenancePlan(
+    AppUser actor,
+    String vehicleId,
+    List<int> bytes,
+    String fileName,
+  ) async {
+    final error = await _repository.uploadMaintenancePlan(actor, vehicleId, bytes, fileName);
+    if (error == null) state++;
+    return error;
+  }
+
+  Future<String?> removeMaintenancePlan(AppUser actor, String vehicleId) async {
+    final error = await _repository.removeMaintenancePlan(actor, vehicleId);
     if (error == null) state++;
     return error;
   }

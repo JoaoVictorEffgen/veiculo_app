@@ -36,6 +36,9 @@ class Vehicle {
     this.startedAt,
     this.stoppedAt,
     this.stoppedLocation,
+    this.maintenancePlanUrl,
+    this.maintenancePlanFileName,
+    this.maintenancePlanUpdatedAt,
   });
 
   final String id;
@@ -48,6 +51,11 @@ class Vehicle {
   final DateTime? startedAt;
   final DateTime? stoppedAt;
   final String? stoppedLocation;
+  final String? maintenancePlanUrl;
+  final String? maintenancePlanFileName;
+  final DateTime? maintenancePlanUpdatedAt;
+
+  bool get hasMaintenancePlan => maintenancePlanUrl != null && maintenancePlanUrl!.isNotEmpty;
 
   Vehicle copyWith({
     String? name,
@@ -59,6 +67,9 @@ class Vehicle {
     DateTime? startedAt,
     DateTime? stoppedAt,
     String? stoppedLocation,
+    String? maintenancePlanUrl,
+    String? maintenancePlanFileName,
+    DateTime? maintenancePlanUpdatedAt,
   }) {
     return Vehicle(
       id: id,
@@ -71,6 +82,9 @@ class Vehicle {
       startedAt: startedAt ?? this.startedAt,
       stoppedAt: stoppedAt ?? this.stoppedAt,
       stoppedLocation: stoppedLocation ?? this.stoppedLocation,
+      maintenancePlanUrl: maintenancePlanUrl ?? this.maintenancePlanUrl,
+      maintenancePlanFileName: maintenancePlanFileName ?? this.maintenancePlanFileName,
+      maintenancePlanUpdatedAt: maintenancePlanUpdatedAt ?? this.maintenancePlanUpdatedAt,
     );
   }
 }

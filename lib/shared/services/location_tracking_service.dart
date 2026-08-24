@@ -4,25 +4,33 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../firebase/firestore_paths.dart';
 import '../../core/utils/iterable_extensions.dart';
 import '../models/app_models.dart';
+import 'active_trip_session_service.dart';
 
 abstract final class LocationTrackingConfig {
   static const updateInterval = Duration(seconds: 5);
   static const distanceFilterMeters = 0;
   static const staleAfter = Duration(seconds: 20);
   static const displayMaxAge = Duration(minutes: 3);
+  static const displayStaleMaxAge = Duration(hours: 2);
   static const watchdogInterval = Duration(seconds: 10);
   static const minStepMeters = 12;
   static const maxStepMeters = 400;
 }
 
 class LocationTrackingService {
-  LocationTrackingService({FirebaseFirestore? firestore}) : _firestore = firestore ?? FirebaseFirestore.instance;
+  LocationTrackingService({
+    FirebaseFirestore? firestore,
+    ActiveTripSessionService? sessionService,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _sessionService = sessionService ?? ActiveTripSessionService();
 
   final FirebaseFirestore _firestore;
+  final ActiveTripSessionService _sessionService;
   StreamSubscription<Position>? _subscription;
   Timer? _watchdogTimer;
   String? _activeDriverId;
@@ -44,7 +52,7 @@ class LocationTrackingService {
     return km;
   }
 
-  Future<bool> ensurePermission({bool requireBackground = true}) async {
+  Future<bool> ensurePermission({bool requireBackground = true, bool blockWithoutAlways = false}) async {
     _permissionIssue = null;
 
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -75,16 +83,51 @@ class LocationTrackingService {
 
       if (permission == LocationPermission.whileInUse) {
         _permissionIssue =
-            'Para rastrear com o app minimizado, escolha "Permitir o tempo todo" nas configuracoes de localizacao.';
+            'Para rastrear com o app fechado, escolha "Permitir o tempo todo" nas configuracoes de localizacao.';
+        if (blockWithoutAlways) return false;
       }
+    }
+
+    if (blockWithoutAlways &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        permission != LocationPermission.always) {
+      _permissionIssue =
+          'Permita localizacao "O tempo todo" antes de iniciar a corrida. Sem isso o GPS para se o app fechar.';
+      return false;
     }
 
     return permission == LocationPermission.always || permission == LocationPermission.whileInUse;
   }
 
-  Future<void> syncTracking({required AppUser? user, required List<Vehicle> vehicles}) async {
-    if (user == null || user.role == UserRole.admin) {
-      await stopTracking();
+  Future<void> requestBatteryOptimizationExemption() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+
+    final status = await Permission.ignoreBatteryOptimizations.status;
+    if (status.isGranted) return;
+    await Permission.ignoreBatteryOptimizations.request();
+  }
+
+  Future<bool> canStartTripTracking() async {
+    final granted = await ensurePermission(requireBackground: true, blockWithoutAlways: true);
+    if (!granted) return false;
+    await requestBatteryOptimizationExemption();
+    return true;
+  }
+
+  Future<void> syncTracking({
+    required AppUser? user,
+    required List<Vehicle> vehicles,
+    required bool vehiclesLoaded,
+  }) async {
+    if (user == null) {
+      await _sessionService.clear();
+      await pauseLocalTracking();
+      return;
+    }
+
+    if (user.role == UserRole.admin) {
+      await pauseLocalTracking();
       return;
     }
 
@@ -92,12 +135,28 @@ class LocationTrackingService {
         .where((vehicle) => vehicle.currentDriverId == user.id && vehicle.status == VehicleStatus.moving)
         .firstOrNull;
 
-    if (activeVehicle == null) {
-      await stopTracking();
+    if (activeVehicle != null) {
+      await _sessionService.save(driverId: user.id, vehicleId: activeVehicle.id);
+      await startTracking(user: user, vehicle: activeVehicle);
       return;
     }
 
-    await startTracking(user: user, vehicle: activeVehicle);
+    final session = await _sessionService.read();
+    if (session?.driverId == user.id) {
+      if (!vehiclesLoaded) {
+        if (isTracking) return;
+        return;
+      }
+
+      await _sessionService.clear();
+    }
+
+    await pauseLocalTracking();
+  }
+
+  Future<void> endTripSession() async {
+    await _sessionService.clear();
+    await pauseLocalTracking();
   }
 
   Future<void> startTracking({required AppUser user, required Vehicle vehicle, bool forceRestart = false}) async {
@@ -107,9 +166,9 @@ class LocationTrackingService {
       return;
     }
 
-    await stopTracking();
+    await pauseLocalTracking();
 
-    final granted = await ensurePermission();
+    final granted = await ensurePermission(requireBackground: true);
     if (!granted) {
       debugPrint('GPS: permissao de localizacao negada.');
       return;
@@ -119,7 +178,6 @@ class LocationTrackingService {
     _activeUser = user;
     _activeVehicle = vehicle;
     _lastPublishAt = null;
-    _sessionDistanceMeters = 0;
 
     final settings = _buildLocationSettings(vehicleName: vehicle.name);
 
@@ -153,8 +211,7 @@ class LocationTrackingService {
     if (_subscription == null || _activeUser == null || _activeVehicle == null) return;
 
     final lastPublish = _lastPublishAt;
-    if (lastPublish != null &&
-        DateTime.now().difference(lastPublish) <= LocationTrackingConfig.staleAfter) {
+    if (lastPublish != null && DateTime.now().difference(lastPublish) <= LocationTrackingConfig.staleAfter) {
       return;
     }
 
@@ -169,28 +226,18 @@ class LocationTrackingService {
     await startTracking(user: user, vehicle: vehicle, forceRestart: true);
   }
 
-  Future<void> stopTracking() async {
+  /// Interrompe apenas o GPS local. Nao apaga o documento remoto — isso so ocorre no PARAR.
+  Future<void> pauseLocalTracking() async {
     _watchdogTimer?.cancel();
     _watchdogTimer = null;
     await _subscription?.cancel();
     _subscription = null;
-
-    final driverId = _activeDriverId;
     _activeDriverId = null;
     _activeUser = null;
     _activeVehicle = null;
     _lastPosition = null;
     _lastPositionAt = null;
     _lastPublishAt = null;
-    _sessionDistanceMeters = 0;
-
-    if (driverId == null) return;
-
-    try {
-      await _firestore.collection(FirestorePaths.tracking).doc(driverId).delete();
-    } catch (error) {
-      debugPrint('GPS: falha ao remover tracking: $error');
-    }
   }
 
   LocationSettings _buildLocationSettings({required String vehicleName}) {
@@ -208,7 +255,7 @@ class LocationTrackingService {
         intervalDuration: LocationTrackingConfig.updateInterval,
         foregroundNotificationConfig: ForegroundNotificationConfig(
           notificationTitle: 'Corrida em andamento',
-          notificationText: 'Rastreando $vehicleName em segundo plano',
+          notificationText: 'Rastreando $vehicleName — toque PARAR no app para encerrar',
           notificationChannelName: 'Rastreamento da frota',
           enableWakeLock: true,
           setOngoing: true,
@@ -299,8 +346,7 @@ class LocationTrackingService {
       position.longitude,
     );
 
-    if (meters >= LocationTrackingConfig.minStepMeters &&
-        meters <= LocationTrackingConfig.maxStepMeters) {
+    if (meters >= LocationTrackingConfig.minStepMeters && meters <= LocationTrackingConfig.maxStepMeters) {
       _sessionDistanceMeters += meters;
     }
   }
@@ -319,8 +365,7 @@ class LocationTrackingService {
       );
       return await _formatLocationLabel(position).timeout(
         const Duration(seconds: 8),
-        onTimeout: () =>
-            '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}',
+        onTimeout: () => '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}',
       );
     } catch (error) {
       debugPrint('GPS: falha ao obter localizacao atual: $error');
@@ -348,6 +393,6 @@ class LocationTrackingService {
   }
 
   void dispose() {
-    unawaited(stopTracking());
+    unawaited(pauseLocalTracking());
   }
 }

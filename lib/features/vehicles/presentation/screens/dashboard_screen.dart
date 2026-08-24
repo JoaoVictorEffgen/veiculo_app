@@ -12,6 +12,7 @@ import '../../../../core/widgets/vehicle_checklist_sheet.dart';
 import '../../../../core/utils/iterable_extensions.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
+import 'maintenance_plan_viewer_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -152,7 +153,8 @@ class _ActiveTripBanner extends StatelessWidget {
             const Text('Aguardando sinal GPS...', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
           const SizedBox(height: 8),
           const Text(
-            'Voce pode minimizar o app. A corrida continua pela notificacao "Corrida em andamento".',
+            'A corrida so encerra ao tocar PARAR. Voce pode minimizar o app — '
+            'se fechar sem querer, reabra o app para retomar o GPS automaticamente.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           if (permissionIssue != null) ...[
@@ -226,6 +228,19 @@ class _VehicleCard extends StatelessWidget {
             label: 'Motorista',
             value: vehicle.currentDriverName ?? 'Nenhum',
           ),
+          if (vehicle.hasMaintenancePlan) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => openMaintenancePlanViewer(
+                context,
+                vehicleName: vehicle.name,
+                fileName: vehicle.maintenancePlanFileName ?? 'plano_manutencao.pdf',
+                url: vehicle.maintenancePlanUrl!,
+              ),
+              icon: const Icon(Icons.build_circle_outlined),
+              label: const Text('Ver plano de manutencao'),
+            ),
+          ],
           if (isMoving)
             FleetInfoRow(icon: Icons.access_time, label: 'Inicio', value: formatDateTime(vehicle.startedAt))
           else ...[
@@ -300,6 +315,31 @@ class _VehicleCard extends StatelessWidget {
       ),
     );
     if (confirmed != true || !context.mounted) return;
+
+    final trackingService = ref.read(locationTrackingServiceProvider);
+    final canTrack = await trackingService.canStartTripTracking();
+    if (!canTrack && context.mounted) {
+      final issue = trackingService.permissionIssue ??
+          'Permita localizacao "O tempo todo" e desative economia de bateria para este app.';
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('GPS necessario para corrida'),
+          content: Text('$issue\n\nSem isso, o rastreamento para se o app for fechado.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await trackingService.openPermissionSettings();
+              },
+              child: const Text('Abrir configuracoes'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
 
     final error = await ref.read(vehicleControllerProvider.notifier).start(vehicle.id, operator);
     if (error != null && context.mounted) {
@@ -378,6 +418,9 @@ class _VehicleCard extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
+
+    await ref.read(locationTrackingServiceProvider).endTripSession();
+
     if (context.mounted && distanceKm > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Corrida registrada: ${distanceKm.toStringAsFixed(1)} km')),

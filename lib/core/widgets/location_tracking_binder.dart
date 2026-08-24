@@ -28,7 +28,10 @@ class _LocationTrackingBinderState extends ConsumerState<LocationTrackingBinder>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed || state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
       _sync();
     }
   }
@@ -47,6 +50,7 @@ class _LocationTrackingBinderState extends ConsumerState<LocationTrackingBinder>
     await ref.read(locationTrackingServiceProvider).syncTracking(
           user: session.user,
           vehicles: ref.read(vehicleControllerProvider),
+          vehiclesLoaded: ref.read(vehicleControllerProvider.notifier).hasLoaded,
         );
   }
 }

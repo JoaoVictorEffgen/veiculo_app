@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../firebase_options.dart';
@@ -649,10 +651,70 @@ class FirebaseVehicleRepository implements VehicleRepository {
       if (!doc.exists) return 'Veiculo nao encontrado.';
       final vehicle = _vehicleFromDoc(doc);
       if (vehicle.status == VehicleStatus.moving) return 'Nao e possivel excluir um veiculo em uso.';
+      if (vehicle.hasMaintenancePlan) {
+        await _deleteMaintenancePlanFile(vehicleId);
+      }
       await doc.reference.delete();
       return null;
     } on FirebaseException catch (error) {
       return error.message;
+    }
+  }
+
+  @override
+  Future<String?> uploadMaintenancePlan(
+    AppUser actor,
+    String vehicleId,
+    List<int> bytes,
+    String fileName,
+  ) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem anexar planos.';
+    if (bytes.isEmpty) return 'Arquivo vazio.';
+
+    final normalizedName = fileName.trim().isEmpty ? 'plano_manutencao.pdf' : fileName.trim();
+    try {
+      final storageRef = FirebaseStorage.instance.ref('vehicles/$vehicleId/maintenance/plan.pdf');
+      await storageRef.putData(
+        Uint8List.fromList(bytes),
+        SettableMetadata(contentType: 'application/pdf'),
+      );
+      final url = await storageRef.getDownloadURL();
+      await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).update({
+        'maintenancePlanUrl': url,
+        'maintenancePlanFileName': normalizedName,
+        'maintenancePlanUpdatedAt': Timestamp.now(),
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao anexar plano de manutencao.';
+    } catch (error) {
+      return 'Erro ao anexar plano de manutencao: $error';
+    }
+  }
+
+  @override
+  Future<String?> removeMaintenancePlan(AppUser actor, String vehicleId) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem remover planos.';
+    try {
+      await _deleteMaintenancePlanFile(vehicleId);
+      await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).update({
+        'maintenancePlanUrl': FieldValue.delete(),
+        'maintenancePlanFileName': FieldValue.delete(),
+        'maintenancePlanUpdatedAt': FieldValue.delete(),
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao remover plano de manutencao.';
+    }
+  }
+
+  Future<void> _deleteMaintenancePlanFile(String vehicleId) async {
+    try {
+      await FirebaseStorage.instance.ref('vehicles/$vehicleId/maintenance/plan.pdf').delete();
+    } on FirebaseException catch (error) {
+      if (error.code != 'object-not-found') {
+        debugPrint('Falha ao remover arquivo de manutencao: ${error.message}');
+      }
     }
   }
 
@@ -855,6 +917,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
       startedAt: (data['startedAt'] as Timestamp?)?.toDate(),
       stoppedAt: (data['stoppedAt'] as Timestamp?)?.toDate(),
       stoppedLocation: data['stoppedLocation'] as String?,
+      maintenancePlanUrl: data['maintenancePlanUrl'] as String?,
+      maintenancePlanFileName: data['maintenancePlanFileName'] as String?,
+      maintenancePlanUpdatedAt: (data['maintenancePlanUpdatedAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -958,6 +1023,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'startedAt': vehicle.startedAt == null ? null : Timestamp.fromDate(vehicle.startedAt!),
         'stoppedAt': vehicle.stoppedAt == null ? null : Timestamp.fromDate(vehicle.stoppedAt!),
         'stoppedLocation': vehicle.stoppedLocation,
+        if (vehicle.maintenancePlanUrl != null) 'maintenancePlanUrl': vehicle.maintenancePlanUrl,
+        if (vehicle.maintenancePlanFileName != null) 'maintenancePlanFileName': vehicle.maintenancePlanFileName,
+        if (vehicle.maintenancePlanUpdatedAt != null)
+          'maintenancePlanUpdatedAt': Timestamp.fromDate(vehicle.maintenancePlanUpdatedAt!),
       };
 
   String _formatTime(DateTime? value) {

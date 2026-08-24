@@ -195,6 +195,19 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   }
 
   @override
+  Future<String?> uploadMaintenancePlan(
+    AppUser actor,
+    String vehicleId,
+    List<int> bytes,
+    String fileName,
+  ) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
+  Future<String?> removeMaintenancePlan(AppUser actor, String vehicleId) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
   Future<String?> addDriver(AppUser actor, {required String name, required String email, required String password}) async {
     try {
       await _local.addDriver(actor, name: name, email: email, password: password);
