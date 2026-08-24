@@ -385,13 +385,14 @@ class FirebaseVehicleRepository implements VehicleRepository {
       if (authUser == null) return Stream.value(const <DriverIssueReport>[]);
 
       final query = user.role == UserRole.admin
-          ? _firestore.collection(FirestorePaths.driverReports).orderBy('createdAt', descending: true)
-          : _firestore
-              .collection(FirestorePaths.driverReports)
-              .where('driverId', isEqualTo: user.id)
-              .orderBy('createdAt', descending: true);
+          ? _firestore.collection(FirestorePaths.driverReports)
+          : _firestore.collection(FirestorePaths.driverReports).where('driverId', isEqualTo: user.id);
 
-      return query.snapshots().map((snapshot) => snapshot.docs.map(_driverIssueReportFromDoc).toList());
+      return query.snapshots().map((snapshot) {
+        final reports = snapshot.docs.map(_driverIssueReportFromDoc).toList();
+        reports.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return reports;
+      });
     });
   }
 

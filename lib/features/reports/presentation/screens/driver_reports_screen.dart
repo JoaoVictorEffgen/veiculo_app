@@ -129,7 +129,12 @@ class _DriverReportsScreenState extends ConsumerState<DriverReportsScreen> {
           const SizedBox(height: 8),
           reportsAsync.when(
             loading: () => const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
-            error: (error, _) => Text('Erro ao carregar relatos: $error'),
+            error: (error, _) => CorporateEmptyState(
+              icon: Icons.cloud_off_outlined,
+              message: error.toString().contains('index')
+                  ? 'Sincronizando relatos. Aguarde alguns segundos e recarregue a pagina.'
+                  : 'Erro ao carregar relatos. Tente novamente em instantes.',
+            ),
             data: (reports) {
               if (reports.isEmpty) {
                 return const CorporateEmptyState(
