@@ -23,8 +23,9 @@ class MainAppShell extends ConsumerWidget {
   }
 
   int _driverSelectedIndex(String location) {
-    if (location.startsWith(AppRoutes.checklists)) return 1;
-    if (location.startsWith(AppRoutes.history)) return 2;
+    if (location.startsWith(AppRoutes.reports)) return 1;
+    if (location.startsWith(AppRoutes.checklists)) return 2;
+    if (location.startsWith(AppRoutes.history)) return 3;
     return 0;
   }
 
@@ -46,6 +47,7 @@ class MainAppShell extends ConsumerWidget {
           : _DriverBottomNav(
               selectedIndex: _driverSelectedIndex(location),
               onVehicles: () => context.go(AppRoutes.dashboard),
+              onReports: () => context.go(AppRoutes.reports),
               onChecklists: () => context.go(AppRoutes.checklists),
               onHistory: () => context.go(AppRoutes.history),
             ),
@@ -149,12 +151,14 @@ class _DriverBottomNav extends StatelessWidget {
   const _DriverBottomNav({
     required this.selectedIndex,
     required this.onVehicles,
+    required this.onReports,
     required this.onChecklists,
     required this.onHistory,
   });
 
   final int selectedIndex;
   final VoidCallback onVehicles;
+  final VoidCallback onReports;
   final VoidCallback onChecklists;
   final VoidCallback onHistory;
 
@@ -179,17 +183,24 @@ class _DriverBottomNav extends StatelessWidget {
                 onTap: onVehicles,
               ),
               _NavItem(
+                icon: Icons.report_outlined,
+                selectedIcon: Icons.report,
+                label: 'Relatos',
+                selected: selectedIndex == 1,
+                onTap: onReports,
+              ),
+              _NavItem(
                 icon: Icons.checklist_rtl,
                 selectedIcon: Icons.checklist_rtl,
                 label: 'Checklists',
-                selected: selectedIndex == 1,
+                selected: selectedIndex == 2,
                 onTap: onChecklists,
               ),
               _NavItem(
                 icon: Icons.history,
                 selectedIcon: Icons.history,
                 label: 'Historico',
-                selected: selectedIndex == 2,
+                selected: selectedIndex == 3,
                 onTap: onHistory,
               ),
             ],

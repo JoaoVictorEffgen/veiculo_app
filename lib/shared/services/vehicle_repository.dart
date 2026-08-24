@@ -35,6 +35,14 @@ abstract class VehicleRepository {
   Future<void> markAdminAlertsViewed(AppUser admin);
   Future<void> saveFcmToken(AppUser user, String token);
 
+  Future<String?> submitDriverIssueReport(
+    AppUser driver, {
+    required String message,
+    String? vehicleId,
+    String? vehicleName,
+  });
+  Stream<List<DriverIssueReport>> watchDriverIssueReports(AppUser user);
+
   Future<String?> startVehicle(String vehicleId, AppUser user);
 
   Future<VehicleChecklist?> getTodayChecklist(AppUser driver, String vehicleId);

@@ -222,6 +222,26 @@ class FleetAdminAlert {
   bool get isRejected => responseStatus == AnnouncementResponseStatus.rejected;
 }
 
+class DriverIssueReport {
+  const DriverIssueReport({
+    required this.id,
+    required this.driverId,
+    required this.driverName,
+    required this.message,
+    required this.createdAt,
+    this.vehicleId,
+    this.vehicleName,
+  });
+
+  final String id;
+  final String driverId;
+  final String driverName;
+  final String message;
+  final DateTime createdAt;
+  final String? vehicleId;
+  final String? vehicleName;
+}
+
 class VehicleChecklistItemDef {
   const VehicleChecklistItemDef({required this.id, required this.label});
 

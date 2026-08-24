@@ -41,6 +41,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
 
     final vehicles = ref.watch(vehicleControllerProvider);
     final adminAlerts = ref.watch(adminAlertsProvider).valueOrNull ?? const <FleetAdminAlert>[];
+    final driverReports = ref.watch(driverIssueReportsProvider).valueOrNull ?? const <DriverIssueReport>[];
     final now = DateTime.now();
 
     final idleVehicles = vehicles.where((vehicle) {
@@ -48,7 +49,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       return now.difference(vehicle.stoppedAt!).inHours >= 24;
     }).toList();
 
-    final hasAlerts = idleVehicles.isNotEmpty || adminAlerts.isNotEmpty;
+    final hasAlerts = idleVehicles.isNotEmpty || adminAlerts.isNotEmpty || driverReports.isNotEmpty;
 
     return AdminOnlyGate(
       child: Scaffold(
@@ -59,7 +60,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
             CorporatePageHeader(
               title: 'Alertas administrativos',
               subtitle: hasAlerts
-                  ? 'Respostas de tarefas e veiculos que precisam de atencao.'
+                  ? 'Relatos de motoristas, respostas de tarefas e veiculos parados.'
                   : 'Nenhum alerta ativo no momento.',
             ),
             const SizedBox(height: 16),
@@ -68,6 +69,11 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                 icon: Icons.check_circle_outline,
                 message: 'Nenhum alerta relevante no momento.',
               ),
+            if (driverReports.isNotEmpty) ...[
+              const CorporateSectionTitle(title: 'Relatos de problemas'),
+              ...driverReports.map((report) => _DriverReportCard(report: report)),
+              const SizedBox(height: 16),
+            ],
             if (adminAlerts.isNotEmpty) ...[
               const CorporateSectionTitle(title: 'Respostas de tarefas'),
               ...adminAlerts.map((alert) => _AdminAlertCard(alert: alert)),
@@ -90,6 +96,52 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _DriverReportCard extends StatelessWidget {
+  const _DriverReportCard({required this.report});
+
+  final DriverIssueReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    return CorporateSurface(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: AppColors.statusStopped.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.report, color: AppColors.statusStopped),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${report.driverName}${report.vehicleName == null ? '' : ' • ${report.vehicleName}'}',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                Text(report.message, style: const TextStyle(fontSize: 14, height: 1.35)),
+                const SizedBox(height: 6),
+                Text(
+                  formatDateTime(report.createdAt),
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

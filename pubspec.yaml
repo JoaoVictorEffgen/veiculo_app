@@ -1,7 +1,7 @@
 name: vehicle_control_app
 description: "Aplicativo interno de controle de veículos e motoristas."
 publish_to: 'none'
-version: 0.3.18
+version: 0.3.19
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -39,6 +39,7 @@ dependencies:
   printing: ^5.14.2
   file_picker: ^8.1.2
   permission_handler: ^11.3.1
+  web: ^1.1.0
 
   # GPS e mapa (OpenStreetMap — gratis, sem API key)
   geolocator: ^13.0.4

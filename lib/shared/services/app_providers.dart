@@ -274,6 +274,12 @@ final adminAlertsProvider = StreamProvider<List<FleetAdminAlert>>((ref) {
   return ref.watch(repositoryProvider).watchAdminAlerts();
 });
 
+final driverIssueReportsProvider = StreamProvider<List<DriverIssueReport>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null) return Stream.value(const []);
+  return ref.watch(repositoryProvider).watchDriverIssueReports(user);
+});
+
 final unreadAdminAlertsCountProvider = Provider<int>((ref) {
   final alerts = ref.watch(adminAlertsProvider).valueOrNull ?? const <FleetAdminAlert>[];
   return alerts.where((alert) => !alert.viewed).length;

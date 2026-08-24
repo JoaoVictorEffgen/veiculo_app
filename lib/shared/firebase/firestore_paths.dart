@@ -9,4 +9,5 @@ class FirestorePaths {
   static const adminAlerts = 'admin_alerts';
   static const vehicleChecklists = 'vehicle_checklists';
   static const maintenanceChunks = 'maintenance_chunks';
+  static const driverReports = 'driver_reports';
 }

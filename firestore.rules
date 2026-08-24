@@ -177,5 +177,15 @@ service cloud.firestore {
       allow update: if isAdmin() || isDriverChecklistUpdate(checklistId);
       allow delete: if isAdmin();
     }
+
+    match /driver_reports/{reportId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.driverName is string
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0;
+      allow update, delete: if isAdmin();
+    }
   }
 }

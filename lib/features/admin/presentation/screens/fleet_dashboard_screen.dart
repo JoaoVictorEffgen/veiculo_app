@@ -59,26 +59,13 @@ class _DashboardBody extends ConsumerWidget {
             children: [
               Expanded(
                 child: CorporateMetricTile(
-                  label: 'Mais tarefas concluidas',
-                  value: report.topTaskDriver == null ? '--' : report.topTaskDriver!.name.split(' ').first,
-                  icon: Icons.task_alt_outlined,
-                  color: AppColors.statusMoving,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: CorporateMetricTile(
                   label: 'Total da frota',
                   value: '${report.totalKm.toStringAsFixed(1)} km',
                   icon: Icons.speed_outlined,
                   color: AppColors.primary,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
+              const SizedBox(width: 8),
               Expanded(
                 child: CorporateMetricTile(
                   label: 'Mais km no periodo',
@@ -87,7 +74,11 @@ class _DashboardBody extends ConsumerWidget {
                   color: AppColors.primaryDark,
                 ),
               ),
-              const SizedBox(width: 8),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
               Expanded(
                 child: CorporateMetricTile(
                   label: 'Mais tempo dirigindo',
@@ -96,11 +87,7 @@ class _DashboardBody extends ConsumerWidget {
                   color: AppColors.statusMovingDark,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
+              const SizedBox(width: 8),
               Expanded(
                 child: CorporateMetricTile(
                   label: 'Veiculo mais usado',
@@ -109,49 +96,12 @@ class _DashboardBody extends ConsumerWidget {
                   color: AppColors.primaryDark,
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: CorporateMetricTile(
-                  label: 'Tarefas concluidas',
-                  value: '${report.tasksCompletedByDriver.fold<int>(0, (sum, item) => sum + item.count)}',
-                  icon: Icons.checklist_rtl_outlined,
-                  color: AppColors.statusMoving,
-                ),
-              ),
             ],
           ),
-          if (report.topDriverByKm != null) ...[
-            const SizedBox(height: 8),
-            CorporateSurface(
-              child: Text(
-                '${report.topDriverByKm!.name} • ${report.topDriverByKm!.km.toStringAsFixed(1)} km rodados',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
           const SizedBox(height: 24),
           _ChartCard(
-            title: 'Tarefas concluidas por motorista',
-            subtitle: 'Ranking de quem mais concluiu tarefas no periodo',
-            child: _CountBarChart(
-              data: report.tasksCompletedByDriver,
-              barColor: AppColors.statusMoving,
-              emptyMessage: 'Nenhuma tarefa concluida no periodo selecionado.',
-            ),
-          ),
-          _ChartCard(
-            title: 'Km rodados por motorista',
-            subtitle: 'Grafico de barras horizontais — ideal para ranking de distancia',
-            child: _KmBarChart(
-              data: report.kmByDriver,
-              emptyMessage: 'Nenhum km registrado ainda. Os dados aparecem ao parar a corrida com GPS ativo.',
-              barColor: AppColors.primary,
-              formatValue: (km) => '${km.toStringAsFixed(1)} km',
-            ),
-          ),
-          _ChartCard(
             title: 'Km por dia',
-            subtitle: 'Grafico de linha — mostra a evolucao diaria da frota',
+            subtitle: 'Evolucao diaria da frota — todos os veiculos somados',
             child: _DailyKmLineChart(data: report.dailyKmTrend),
           ),
           _ChartCard(
@@ -163,14 +113,6 @@ class _DashboardBody extends ConsumerWidget {
             title: 'Participacao de uso por veiculo',
             subtitle: 'Grafico de rosca — mostra a fatia de cada veiculo no total de saidas',
             child: _VehicleUsageDonutChart(data: report.utilizationByVehicle),
-          ),
-          _ChartCard(
-            title: 'Utilizacoes por veiculo',
-            subtitle: 'Barras horizontais — quantidade exata de vezes que saiu',
-            child: _CountBarChart(
-              data: report.utilizationByVehicle,
-              barColor: AppColors.primaryDark,
-            ),
           ),
           const _ChartGuideCard(),
         ],

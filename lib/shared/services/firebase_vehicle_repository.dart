@@ -354,6 +354,48 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   @override
+  Future<String?> submitDriverIssueReport(
+    AppUser driver, {
+    required String message,
+    String? vehicleId,
+    String? vehicleName,
+  }) async {
+    if (driver.role != UserRole.driver) return 'Somente motoristas podem enviar relatos.';
+    final trimmed = message.trim();
+    if (trimmed.isEmpty) return 'Descreva o problema antes de enviar.';
+
+    try {
+      await _firestore.collection(FirestorePaths.driverReports).add({
+        'driverId': driver.id,
+        'driverName': driver.name,
+        'message': trimmed,
+        if (vehicleId != null) 'vehicleId': vehicleId,
+        if (vehicleName != null) 'vehicleName': vehicleName,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao enviar relato.';
+    }
+  }
+
+  @override
+  Stream<List<DriverIssueReport>> watchDriverIssueReports(AppUser user) {
+    return _auth.authStateChanges().asyncExpand((authUser) {
+      if (authUser == null) return Stream.value(const <DriverIssueReport>[]);
+
+      final query = user.role == UserRole.admin
+          ? _firestore.collection(FirestorePaths.driverReports).orderBy('createdAt', descending: true)
+          : _firestore
+              .collection(FirestorePaths.driverReports)
+              .where('driverId', isEqualTo: user.id)
+              .orderBy('createdAt', descending: true);
+
+      return query.snapshots().map((snapshot) => snapshot.docs.map(_driverIssueReportFromDoc).toList());
+    });
+  }
+
+  @override
   Future<void> saveFcmToken(AppUser user, String token) async {
     try {
       await _firestore.collection(FirestorePaths.users).doc(user.id).set(
@@ -1050,6 +1092,19 @@ class FirebaseVehicleRepository implements VehicleRepository {
       viewed: data['viewed'] as bool? ?? false,
       viewedAt: (data['viewedAt'] as Timestamp?)?.toDate(),
       isGroupTask: data['isGroupTask'] as bool? ?? false,
+    );
+  }
+
+  DriverIssueReport _driverIssueReportFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
+    return DriverIssueReport(
+      id: doc.id,
+      driverId: data['driverId'] as String? ?? '',
+      driverName: data['driverName'] as String? ?? 'Motorista',
+      message: data['message'] as String? ?? '',
+      vehicleId: data['vehicleId'] as String?,
+      vehicleName: data['vehicleName'] as String?,
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 

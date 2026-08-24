@@ -11,6 +11,7 @@ import '../features/admin/presentation/screens/tracking_screen.dart';
 import '../features/alerts/presentation/screens/alerts_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/history/presentation/screens/history_screen.dart';
+import '../features/reports/presentation/screens/driver_reports_screen.dart';
 import '../features/vehicles/presentation/screens/dashboard_screen.dart';
 import '../shared/models/app_models.dart';
 import '../shared/models/auth_session.dart';
@@ -28,6 +29,7 @@ class AppRoutes {
   static const fleetDashboard = '/fleet-dashboard';
   static const alerts = '/alerts';
   static const checklists = '/checklists';
+  static const reports = '/reports';
 }
 
 class RouterNotifier extends ChangeNotifier {
@@ -82,6 +84,10 @@ String? resolveRedirect(GoRouterState state, AuthSession session) {
     return AppRoutes.dashboard;
   }
 
+  if (location == AppRoutes.reports && user?.role != UserRole.driver) {
+    return AppRoutes.dashboard;
+  }
+
   return null;
 }
 
@@ -131,6 +137,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.checklists,
             builder: (context, state) => const ChecklistsScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.reports,
+            builder: (context, state) => const DriverReportsScreen(),
           ),
         ],
       ),

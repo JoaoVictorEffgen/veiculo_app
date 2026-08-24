@@ -1,7 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:printing/printing.dart';
+
+import '../../../../core/widgets/pdf_bytes_viewer.dart';
 
 Future<void> openMaintenancePlanViewer(
   BuildContext context, {
@@ -36,13 +37,9 @@ class MaintenancePlanViewerScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text('Plano — $vehicleName')),
-      body: PdfPreview(
-        canChangePageFormat: false,
-        canChangeOrientation: false,
-        allowPrinting: true,
-        allowSharing: true,
-        pdfFileName: fileName,
-        build: (_) => loadBytes(),
+      body: PdfBytesViewer(
+        fileName: fileName,
+        loadBytes: loadBytes,
       ),
     );
   }
