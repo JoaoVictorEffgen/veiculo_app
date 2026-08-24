@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -9,6 +11,7 @@ import '../../firebase_options.dart';
 import '../firebase/firestore_paths.dart';
 import '../models/app_models.dart';
 import '../seed/app_seed_data.dart';
+import 'vehicle_maintenance_plan_codec.dart';
 import 'vehicle_repository.dart';
 
 class FirebaseVehicleRepository implements VehicleRepository {
@@ -649,12 +652,131 @@ class FirebaseVehicleRepository implements VehicleRepository {
       if (!doc.exists) return 'Veiculo nao encontrado.';
       final vehicle = _vehicleFromDoc(doc);
       if (vehicle.status == VehicleStatus.moving) return 'Nao e possivel excluir um veiculo em uso.';
+      await _deleteMaintenanceChunks(vehicleId);
       await doc.reference.delete();
       return null;
     } on FirebaseException catch (error) {
       return error.message;
     }
   }
+
+  @override
+  Future<String?> uploadMaintenancePlan(
+    AppUser actor,
+    String vehicleId,
+    List<int> bytes,
+    String fileName,
+  ) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem anexar planos.';
+    if (bytes.isEmpty) return 'Arquivo vazio.';
+    if (bytes.length > VehicleMaintenancePlanLimits.maxFileSizeBytes) {
+      return 'Arquivo muito grande. Maximo ${VehicleMaintenancePlanLimits.maxFileSizeBytes ~/ (1024 * 1024)} MB.';
+    }
+
+    final normalizedName = fileName.trim().isEmpty ? 'plano_manutencao.pdf' : fileName.trim();
+    if (!normalizedName.toLowerCase().endsWith('.pdf')) {
+      return 'Envie um arquivo PDF.';
+    }
+
+    try {
+      final vehicleRef = _firestore.collection(FirestorePaths.vehicles).doc(vehicleId);
+      final vehicleSnap = await vehicleRef.get();
+      if (!vehicleSnap.exists) return 'Veiculo nao encontrado.';
+
+      await _deleteMaintenanceChunks(vehicleId);
+
+      final chunks = VehicleMaintenancePlanCodec.split(Uint8List.fromList(bytes));
+      for (var index = 0; index < chunks.length; index++) {
+        await vehicleRef.collection(FirestorePaths.maintenanceChunks).doc(_chunkDocId(index)).set({
+          'index': index,
+          'data': base64Encode(chunks[index]),
+        });
+      }
+
+      await vehicleRef.update({
+        'maintenancePlanFileName': normalizedName,
+        'maintenancePlanUpdatedAt': Timestamp.now(),
+        'maintenancePlanSizeBytes': bytes.length,
+        'maintenancePlanChunkCount': chunks.length,
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao anexar plano de manutencao.';
+    } catch (error) {
+      return 'Erro ao anexar plano de manutencao: $error';
+    }
+  }
+
+  @override
+  Future<String?> removeMaintenancePlan(AppUser actor, String vehicleId) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem remover planos.';
+    try {
+      await _deleteMaintenanceChunks(vehicleId);
+      await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).update({
+        'maintenancePlanFileName': FieldValue.delete(),
+        'maintenancePlanUpdatedAt': FieldValue.delete(),
+        'maintenancePlanSizeBytes': FieldValue.delete(),
+        'maintenancePlanChunkCount': FieldValue.delete(),
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao remover plano de manutencao.';
+    }
+  }
+
+  @override
+  Future<Uint8List?> fetchMaintenancePlanBytes(String vehicleId) async {
+    if (_auth.currentUser == null) return null;
+
+    try {
+      final vehicleRef = _firestore.collection(FirestorePaths.vehicles).doc(vehicleId);
+      final vehicleSnap = await vehicleRef.get();
+      if (!vehicleSnap.exists) return null;
+
+      final vehicle = _vehicleFromDoc(vehicleSnap);
+      if (!vehicle.hasMaintenancePlan) return null;
+
+      final snapshot = await vehicleRef.collection(FirestorePaths.maintenanceChunks).get();
+      if (snapshot.docs.isEmpty) return null;
+
+      final ordered = snapshot.docs.toList()
+        ..sort((a, b) {
+          final ai = a.data()['index'] as int? ?? 0;
+          final bi = b.data()['index'] as int? ?? 0;
+          return ai.compareTo(bi);
+        });
+
+      return VehicleMaintenancePlanCodec.merge(
+        ordered.map((doc) => doc.data()['data'] as String).toList(),
+      );
+    } on FirebaseException catch (error) {
+      debugPrint('Falha ao baixar plano de manutencao: ${error.message}');
+      return null;
+    }
+  }
+
+  Future<void> _deleteMaintenanceChunks(String vehicleId) async {
+    final chunksRef = _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).collection(FirestorePaths.maintenanceChunks);
+    final snapshot = await chunksRef.get();
+    if (snapshot.docs.isEmpty) return;
+
+    var batch = _firestore.batch();
+    var ops = 0;
+    for (final doc in snapshot.docs) {
+      batch.delete(doc.reference);
+      ops++;
+      if (ops >= 450) {
+        await batch.commit();
+        batch = _firestore.batch();
+        ops = 0;
+      }
+    }
+    if (ops > 0) {
+      await batch.commit();
+    }
+  }
+
+  String _chunkDocId(int index) => index.toString().padLeft(4, '0');
 
   @override
   Future<String?> addDriver(AppUser actor, {required String name, required String email, required String password}) async {
@@ -855,6 +977,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
       startedAt: (data['startedAt'] as Timestamp?)?.toDate(),
       stoppedAt: (data['stoppedAt'] as Timestamp?)?.toDate(),
       stoppedLocation: data['stoppedLocation'] as String?,
+      maintenancePlanFileName: data['maintenancePlanFileName'] as String?,
+      maintenancePlanUpdatedAt: (data['maintenancePlanUpdatedAt'] as Timestamp?)?.toDate(),
+      maintenancePlanSizeBytes: (data['maintenancePlanSizeBytes'] as num?)?.toInt(),
     );
   }
 
@@ -958,6 +1083,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'startedAt': vehicle.startedAt == null ? null : Timestamp.fromDate(vehicle.startedAt!),
         'stoppedAt': vehicle.stoppedAt == null ? null : Timestamp.fromDate(vehicle.stoppedAt!),
         'stoppedLocation': vehicle.stoppedLocation,
+        if (vehicle.maintenancePlanFileName != null) 'maintenancePlanFileName': vehicle.maintenancePlanFileName,
+        if (vehicle.maintenancePlanUpdatedAt != null)
+          'maintenancePlanUpdatedAt': Timestamp.fromDate(vehicle.maintenancePlanUpdatedAt!),
+        if (vehicle.maintenancePlanSizeBytes != null) 'maintenancePlanSizeBytes': vehicle.maintenancePlanSizeBytes,
       };
 
   String _formatTime(DateTime? value) {

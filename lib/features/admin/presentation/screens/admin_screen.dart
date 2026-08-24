@@ -1,14 +1,18 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router.dart';
 import '../../../../app/theme.dart';
+import '../../../../core/utils/date_formatter.dart';
+import '../../../../core/utils/loading_dialog.dart';
 import '../../../../core/widgets/corporate_ui.dart';
 import '../../../../core/widgets/fleet_announcement_banner.dart';
 import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
+import '../../../vehicles/presentation/screens/maintenance_plan_viewer_screen.dart';
 
 class AdminScreen extends ConsumerWidget {
   const AdminScreen({super.key});
@@ -92,11 +96,28 @@ class AdminScreen extends ConsumerWidget {
                     color: vehicle.status == VehicleStatus.moving ? AppColors.statusMoving : AppColors.statusStopped,
                   ),
                   title: Text(vehicle.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('${vehicle.model} • ${vehicle.plate}\n${vehicle.currentDriverName ?? 'Disponivel'}${vehicle.stoppedLocation == null ? '' : ' • ${vehicle.stoppedLocation}'}'),
+                  subtitle: Text(
+                    '${vehicle.model} • ${vehicle.plate}\n'
+                    '${vehicle.currentDriverName ?? 'Disponivel'}${vehicle.stoppedLocation == null ? '' : ' • ${vehicle.stoppedLocation}'}\n'
+                    '${vehicle.hasMaintenancePlan ? 'Plano: ${vehicle.maintenancePlanFileName}' : 'Sem plano de manutencao'}',
+                  ),
                   isThreeLine: true,
-                  trailing: IconButton(
-                    icon: const Icon(Icons.edit_outlined),
-                    onPressed: () => _editVehicle(context, ref, user!, vehicle),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Plano de manutencao',
+                        icon: Icon(
+                          vehicle.hasMaintenancePlan ? Icons.build_circle : Icons.upload_file_outlined,
+                          color: vehicle.hasMaintenancePlan ? AppColors.statusMoving : null,
+                        ),
+                        onPressed: () => _manageMaintenancePlan(context, ref, user!, vehicle),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () => _editVehicle(context, ref, user!, vehicle),
+                      ),
+                    ],
                   ),
                 ),
               )),
@@ -247,6 +268,96 @@ class AdminScreen extends ConsumerWidget {
     final error = await ref.read(adminControllerProvider.notifier).deleteVehicle(admin, vehicle.id);
     ref.read(vehicleControllerProvider.notifier).refresh();
     if (error != null && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+  }
+
+  Future<void> _manageMaintenancePlan(BuildContext context, WidgetRef ref, AppUser admin, Vehicle vehicle) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Plano de manutencao — ${vehicle.name}'),
+        content: Text(
+          vehicle.hasMaintenancePlan
+              ? 'Arquivo: ${vehicle.maintenancePlanFileName}\n'
+                  'Tamanho: ${((vehicle.maintenancePlanSizeBytes ?? 0) / 1024).toStringAsFixed(0)} KB\n'
+                  'Atualizado: ${vehicle.maintenancePlanUpdatedAt == null ? '—' : formatDateTime(vehicle.maintenancePlanUpdatedAt)}'
+              : 'Nenhum plano anexado. Escolha um PDF do celular ou computador.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
+          if (vehicle.hasMaintenancePlan) ...[
+            TextButton(onPressed: () => Navigator.pop(context, 'view'), child: const Text('Visualizar')),
+            TextButton(onPressed: () => Navigator.pop(context, 'remove'), child: const Text('Remover')),
+          ],
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, 'attach'),
+            child: Text(vehicle.hasMaintenancePlan ? 'Substituir PDF' : 'Anexar PDF'),
+          ),
+        ],
+      ),
+    );
+    if (!context.mounted || action == null) return;
+
+    if (action == 'view') {
+      await _openMaintenancePlan(context, ref, vehicle);
+      return;
+    }
+
+    if (action == 'remove') {
+      final confirmed = await _confirmDelete(context, 'Remover plano de ${vehicle.name}?');
+      if (!confirmed || !context.mounted) return;
+      final error = await ref.read(adminControllerProvider.notifier).removeMaintenancePlan(admin, vehicle.id);
+      ref.read(vehicleControllerProvider.notifier).refresh();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error ?? 'Plano removido.')));
+      }
+      return;
+    }
+
+    if (action == 'attach') {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['pdf'],
+        withData: true,
+      );
+      if (!context.mounted) return;
+      final file = picked?.files.single;
+      if (file == null || file.bytes == null) return;
+
+      final error = await runWithBlockingLoadingDialog<String?>(
+        context,
+        message: 'Enviando plano de manutencao...',
+        action: () => ref.read(adminControllerProvider.notifier).uploadMaintenancePlan(
+              admin,
+              vehicle.id,
+              file.bytes!,
+              file.name,
+            ),
+      );
+
+      ref.read(vehicleControllerProvider.notifier).refresh();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error ?? 'Plano de manutencao anexado.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openMaintenancePlan(BuildContext context, WidgetRef ref, Vehicle vehicle) async {
+    if (!vehicle.hasMaintenancePlan) return;
+
+    await openMaintenancePlanViewer(
+      context,
+      vehicleName: vehicle.name,
+      fileName: vehicle.maintenancePlanFileName ?? 'plano_manutencao.pdf',
+      loadBytes: () async {
+        final bytes = await ref.read(repositoryProvider).fetchMaintenancePlanBytes(vehicle.id);
+        if (bytes == null || bytes.isEmpty) {
+          throw Exception('Plano de manutencao nao encontrado.');
+        }
+        return bytes;
+      },
+    );
   }
 
   Future<void> _addDriver(BuildContext context, WidgetRef ref, AppUser admin) async {

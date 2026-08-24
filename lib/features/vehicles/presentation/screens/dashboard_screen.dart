@@ -12,6 +12,7 @@ import '../../../../core/widgets/vehicle_checklist_sheet.dart';
 import '../../../../core/utils/iterable_extensions.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
+import 'maintenance_plan_viewer_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -227,6 +228,14 @@ class _VehicleCard extends StatelessWidget {
             label: 'Motorista',
             value: vehicle.currentDriverName ?? 'Nenhum',
           ),
+          if (vehicle.hasMaintenancePlan) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => _openMaintenancePlan(context),
+              icon: const Icon(Icons.build_circle_outlined),
+              label: const Text('Ver plano de manutencao'),
+            ),
+          ],
           if (isMoving)
             FleetInfoRow(icon: Icons.access_time, label: 'Inicio', value: formatDateTime(vehicle.startedAt))
           else ...[
@@ -252,6 +261,23 @@ class _VehicleCard extends StatelessWidget {
     final operator = user;
     if (operator == null) return;
     await _confirmStartWithChecklist(context, operator);
+  }
+
+  Future<void> _openMaintenancePlan(BuildContext context) async {
+    if (!vehicle.hasMaintenancePlan) return;
+
+    await openMaintenancePlanViewer(
+      context,
+      vehicleName: vehicle.name,
+      fileName: vehicle.maintenancePlanFileName ?? 'plano_manutencao.pdf',
+      loadBytes: () async {
+        final bytes = await ref.read(repositoryProvider).fetchMaintenancePlanBytes(vehicle.id);
+        if (bytes == null || bytes.isEmpty) {
+          throw Exception('Plano de manutencao nao encontrado.');
+        }
+        return bytes;
+      },
+    );
   }
 
   Future<void> _confirmStartWithChecklist(BuildContext context, AppUser operator) async {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import '../models/app_models.dart';
 import 'local_vehicle_repository.dart';
@@ -193,6 +194,22 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
       return error.message;
     }
   }
+
+  @override
+  Future<String?> uploadMaintenancePlan(
+    AppUser actor,
+    String vehicleId,
+    List<int> bytes,
+    String fileName,
+  ) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
+  Future<String?> removeMaintenancePlan(AppUser actor, String vehicleId) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
+  Future<Uint8List?> fetchMaintenancePlanBytes(String vehicleId) async => null;
 
   @override
   Future<String?> addDriver(AppUser actor, {required String name, required String email, required String password}) async {

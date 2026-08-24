@@ -165,6 +165,23 @@ class AdminController extends StateNotifier<int> {
     if (error == null) state++;
     return error;
   }
+
+  Future<String?> uploadMaintenancePlan(
+    AppUser actor,
+    String vehicleId,
+    List<int> bytes,
+    String fileName,
+  ) async {
+    final error = await _repository.uploadMaintenancePlan(actor, vehicleId, bytes, fileName);
+    if (error == null) state++;
+    return error;
+  }
+
+  Future<String?> removeMaintenancePlan(AppUser actor, String vehicleId) async {
+    final error = await _repository.removeMaintenancePlan(actor, vehicleId);
+    if (error == null) state++;
+    return error;
+  }
 }
 
 final adminControllerProvider = StateNotifierProvider<AdminController, int>((ref) {

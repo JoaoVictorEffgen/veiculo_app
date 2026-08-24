@@ -139,6 +139,11 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || canOperateVehicle();
+
+      match /maintenance_chunks/{chunkId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
+      }
     }
 
     match /movements/{movementId} {
