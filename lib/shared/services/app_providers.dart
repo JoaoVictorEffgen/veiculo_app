@@ -91,7 +91,9 @@ class VehicleController extends StateNotifier<List<Vehicle>> {
 
   Future<String?> stop(String vehicleId, AppUser user, String location, {double? distanceKm}) async {
     final error = await _repository.stopVehicle(vehicleId, user, location, distanceKm: distanceKm);
-    if (error == null) await refresh();
+    // O stream watchVehicles() ja atualiza a UI; refresh bloqueante aqui
+    // mantinha o dialogo "Registrando parada..." aberto no celular.
+    if (error == null) unawaited(refresh());
     return error;
   }
 
