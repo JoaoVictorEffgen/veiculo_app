@@ -50,8 +50,6 @@ abstract class VehicleRepository {
   Future<String?> addVehicle(AppUser actor, {required String name, required String model, required String plate});
   Future<String?> editVehicle(AppUser actor, {required String vehicleId, required String name, required String model, required String plate});
   Future<String?> deleteVehicle(AppUser actor, String vehicleId);
-  Future<String?> uploadMaintenancePlan(AppUser actor, String vehicleId, List<int> bytes, String fileName);
-  Future<String?> removeMaintenancePlan(AppUser actor, String vehicleId);
   Future<String?> addDriver(AppUser actor, {required String name, required String email, required String password});
   Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, String? password});
   Future<String?> deleteDriver(AppUser actor, String driverId);

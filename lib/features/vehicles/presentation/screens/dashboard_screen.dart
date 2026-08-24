@@ -12,7 +12,6 @@ import '../../../../core/widgets/vehicle_checklist_sheet.dart';
 import '../../../../core/utils/iterable_extensions.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
-import 'maintenance_plan_viewer_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -228,19 +227,6 @@ class _VehicleCard extends StatelessWidget {
             label: 'Motorista',
             value: vehicle.currentDriverName ?? 'Nenhum',
           ),
-          if (vehicle.hasMaintenancePlan) ...[
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: () => openMaintenancePlanViewer(
-                context,
-                vehicleName: vehicle.name,
-                fileName: vehicle.maintenancePlanFileName ?? 'plano_manutencao.pdf',
-                url: vehicle.maintenancePlanUrl!,
-              ),
-              icon: const Icon(Icons.build_circle_outlined),
-              label: const Text('Ver plano de manutencao'),
-            ),
-          ],
           if (isMoving)
             FleetInfoRow(icon: Icons.access_time, label: 'Inicio', value: formatDateTime(vehicle.startedAt))
           else ...[
