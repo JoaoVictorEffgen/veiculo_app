@@ -1036,13 +1036,19 @@ class FirebaseVehicleRepository implements VehicleRepository {
         await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
       }
 
-      final marker = await secondaryFirestore.collection(FirestorePaths.vehicles).doc('vehicle-1').get();
-      if (!marker.exists) {
-        final batch = secondaryFirestore.batch();
-        for (final vehicle in _seedVehicles) {
-          batch.set(secondaryFirestore.collection(FirestorePaths.vehicles).doc(vehicle.id), _vehicleToMap(vehicle));
+      final batch = secondaryFirestore.batch();
+      var createdVehicles = 0;
+      for (final vehicle in _seedVehicles) {
+        final ref = secondaryFirestore.collection(FirestorePaths.vehicles).doc(vehicle.id);
+        final snap = await ref.get();
+        if (!snap.exists) {
+          batch.set(ref, _vehicleToMap(vehicle));
+          createdVehicles++;
         }
+      }
+      if (createdVehicles > 0) {
         await batch.commit();
+        debugPrint('Seed Firebase: $createdVehicles veiculo(s) de teste criado(s).');
       }
     } catch (error, stackTrace) {
       debugPrint('Seed Firebase: $error\n$stackTrace');
@@ -1079,7 +1085,15 @@ class FirebaseVehicleRepository implements VehicleRepository {
     }
 
     final ref = secondaryFirestore.collection(FirestorePaths.users).doc(uid);
-    if ((await ref.get()).exists) return;
+    final existing = await ref.get();
+    if (existing.exists) {
+      await ref.set({
+        'name': seed.name,
+        'email': seed.email,
+        'role': seed.role.name,
+      }, SetOptions(merge: true));
+      return;
+    }
 
     if (seed.role == UserRole.admin) {
       await secondaryAuth.signInWithEmailAndPassword(email: seed.email, password: seed.password);

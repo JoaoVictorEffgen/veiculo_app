@@ -14,16 +14,19 @@ class SeedUser {
   final UserRole role;
 }
 
-/// Dados iniciais: 4 motoristas, 1 admin e 4 veiculos.
+/// Dados iniciais para testes — 1 admin, 4 motoristas e 4 veiculos.
+/// Senha padrao de todos: [defaultPassword]
 abstract final class AppSeedData {
   static const defaultPassword = '123456';
+
+  static const adminEmail = 'admin@empresa.com';
 
   static const users = [
     SeedUser(name: 'Joao Silva', email: 'motorista1@empresa.com', password: defaultPassword, role: UserRole.driver),
     SeedUser(name: 'Carlos Santos', email: 'motorista2@empresa.com', password: defaultPassword, role: UserRole.driver),
     SeedUser(name: 'Marina Costa', email: 'motorista3@empresa.com', password: defaultPassword, role: UserRole.driver),
     SeedUser(name: 'Pedro Oliveira', email: 'motorista4@empresa.com', password: defaultPassword, role: UserRole.driver),
-    SeedUser(name: 'Administrador', email: 'admin@empresa.com', password: defaultPassword, role: UserRole.admin),
+    SeedUser(name: 'Administrador', email: adminEmail, password: defaultPassword, role: UserRole.admin),
   ];
 
   static const vehicles = [
