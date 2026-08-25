@@ -28,6 +28,10 @@ class FleetAnalyticsService {
     final tasksCompletedByDriver = _tasksCompletedByDriver(alertsInPeriod, drivers);
     final totalKm = kmByDriver.fold<double>(0, (sum, item) => sum + item.km);
 
+    final tripSpeedRecords = _tripSpeedRecords(movements, period);
+    final avgSpeedByDriver = _avgSpeedByDriver(tripSpeedRecords, drivers);
+    final hourlySpeedByDriver = _hourlySpeedByDriver(tripSpeedRecords);
+
     NamedCount? topVehicle;
     if (utilizationByVehicle.isNotEmpty && utilizationByVehicle.first.count > 0) {
       topVehicle = utilizationByVehicle.first;
@@ -48,6 +52,12 @@ class FleetAnalyticsService {
       topTaskDriver = tasksCompletedByDriver.first;
     }
 
+    NamedSpeed? topDriverBySpeed;
+    final activeSpeeds = avgSpeedByDriver.where((item) => item.avgSpeedKmh > 0).toList();
+    if (activeSpeeds.isNotEmpty) {
+      topDriverBySpeed = activeSpeeds.first;
+    }
+
     return FleetAnalyticsReport(
       period: period,
       utilizationByVehicle: utilizationByVehicle,
@@ -57,10 +67,14 @@ class FleetAnalyticsService {
       dailyKmTrend: dailyKmTrend,
       totalKm: totalKm,
       tasksCompletedByDriver: tasksCompletedByDriver,
+      avgSpeedByDriver: avgSpeedByDriver,
+      tripSpeedRecords: tripSpeedRecords,
+      hourlySpeedByDriver: hourlySpeedByDriver,
       topVehicle: topVehicle,
       topDriver: topDriver,
       topDriverByKm: topDriverByKm,
       topTaskDriver: topTaskDriver,
+      topDriverBySpeed: topDriverBySpeed,
     );
   }
 
@@ -196,6 +210,132 @@ class FleetAnalyticsService {
     }
 
     return total;
+  }
+
+  List<TripSpeedRecord> _tripSpeedRecords(List<Movement> allMovements, DateTimeRange period) {
+    final records = <TripSpeedRecord>[];
+    final sorted = [...allMovements]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    for (var i = 0; i < sorted.length; i++) {
+      final on = sorted[i];
+      if (on.action != MovementAction.on) continue;
+
+      Movement? off;
+      for (var j = i + 1; j < sorted.length; j++) {
+        if (sorted[j].vehicleId == on.vehicleId && sorted[j].action == MovementAction.off) {
+          off = sorted[j];
+          break;
+        }
+      }
+      if (off == null) continue;
+
+      final km = off.distanceKm ?? 0;
+      if (km <= 0) continue;
+
+      final startedAt = on.createdAt;
+      final endedAt = off.createdAt;
+      if (!endedAt.isAfter(startedAt)) continue;
+      if (endedAt.isBefore(period.start) || startedAt.isAfter(period.end)) continue;
+
+      final hours = endedAt.difference(startedAt).inSeconds / 3600.0;
+      if (hours <= 0) continue;
+
+      records.add(
+        TripSpeedRecord(
+          driverId: on.driverId,
+          driverName: on.driverName,
+          vehicleName: on.vehicleName,
+          startedAt: startedAt,
+          endedAt: endedAt,
+          distanceKm: km,
+          avgSpeedKmh: km / hours,
+        ),
+      );
+    }
+
+    records.sort((a, b) => b.endedAt.compareTo(a.endedAt));
+    return records;
+  }
+
+  List<NamedSpeed> _avgSpeedByDriver(List<TripSpeedRecord> trips, List<AppUser> drivers) {
+    final kmTotals = <String, double>{for (final driver in drivers) driver.id: 0};
+    final hourTotals = <String, double>{for (final driver in drivers) driver.id: 0};
+
+    for (final trip in trips) {
+      final hours = trip.endedAt.difference(trip.startedAt).inSeconds / 3600.0;
+      if (hours <= 0) continue;
+      kmTotals.update(trip.driverId, (value) => value + trip.distanceKm, ifAbsent: () => trip.distanceKm);
+      hourTotals.update(trip.driverId, (value) => value + hours, ifAbsent: () => hours);
+    }
+
+    return drivers
+        .map((driver) {
+          final km = kmTotals[driver.id] ?? 0;
+          final hours = hourTotals[driver.id] ?? 0;
+          final avg = hours > 0 ? km / hours : 0.0;
+          return NamedSpeed(
+            id: driver.id,
+            name: driver.name,
+            avgSpeedKmh: avg,
+            totalKm: km,
+            movingTime: Duration(seconds: (hours * 3600).round()),
+          );
+        })
+        .toList()
+      ..sort((a, b) => b.avgSpeedKmh.compareTo(a.avgSpeedKmh));
+  }
+
+  List<DriverHourlySpeed> _hourlySpeedByDriver(List<TripSpeedRecord> trips) {
+    final kmBuckets = <String, double>{};
+    final hourBuckets = <String, double>{};
+    final meta = <String, ({String driverId, String driverName, DateTime hourStart})>{};
+
+    for (final trip in trips) {
+      final totalMs = trip.endedAt.difference(trip.startedAt).inMilliseconds;
+      if (totalMs <= 0) continue;
+
+      var cursor = trip.startedAt;
+      final end = trip.endedAt;
+
+      while (cursor.isBefore(end)) {
+        final hourStart = DateTime(cursor.year, cursor.month, cursor.day, cursor.hour);
+        final hourEnd = hourStart.add(const Duration(hours: 1));
+        final segmentEnd = end.isBefore(hourEnd) ? end : hourEnd;
+        final segmentMs = segmentEnd.difference(cursor).inMilliseconds;
+        if (segmentMs <= 0) break;
+
+        final fraction = segmentMs / totalMs;
+        final segmentKm = trip.distanceKm * fraction;
+        final segmentHours = segmentMs / 3600000.0;
+        final key = '${trip.driverId}_${hourStart.millisecondsSinceEpoch}';
+
+        kmBuckets[key] = (kmBuckets[key] ?? 0) + segmentKm;
+        hourBuckets[key] = (hourBuckets[key] ?? 0) + segmentHours;
+        meta[key] = (driverId: trip.driverId, driverName: trip.driverName, hourStart: hourStart);
+
+        cursor = segmentEnd;
+      }
+    }
+
+    final results = <DriverHourlySpeed>[];
+    for (final entry in kmBuckets.entries) {
+      final info = meta[entry.key];
+      if (info == null) continue;
+      final hours = hourBuckets[entry.key] ?? 0;
+      if (hours <= 0 || entry.value <= 0) continue;
+      results.add(
+        DriverHourlySpeed(
+          driverId: info.driverId,
+          driverName: info.driverName,
+          hourStart: info.hourStart,
+          km: entry.value,
+          avgSpeedKmh: entry.value / hours,
+        ),
+      );
+    }
+
+    results.sort((a, b) => b.hourStart.compareTo(a.hourStart));
+    return results;
   }
 
   bool _inRange(DateTime value, DateTimeRange range) {

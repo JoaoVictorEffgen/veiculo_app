@@ -12,6 +12,7 @@ import '../../../../core/widgets/fleet_announcement_banner.dart';
 import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
+import '../widgets/vehicle_maintenance_sheet.dart';
 import '../../../vehicles/presentation/screens/maintenance_plan_viewer_screen.dart';
 
 class AdminScreen extends ConsumerWidget {
@@ -99,19 +100,24 @@ class AdminScreen extends ConsumerWidget {
                   subtitle: Text(
                     '${vehicle.model} • ${vehicle.plate}\n'
                     '${vehicle.currentDriverName ?? 'Disponivel'}${vehicle.stoppedLocation == null ? '' : ' • ${vehicle.stoppedLocation}'}\n'
-                    '${vehicle.hasMaintenancePlan ? 'Plano: ${vehicle.maintenancePlanFileName}' : 'Sem plano de manutencao'}',
+                    '${vehicle.odometerKm != null ? 'Odometro: ${vehicle.odometerKm!.toStringAsFixed(0)} km • ' : ''}'
+                    '${vehicle.hasMaintenancePlan ? 'Plano PDF anexado' : 'Sem plano PDF'}',
                   ),
                   isThreeLine: true,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        tooltip: 'Plano de manutencao',
+                        tooltip: 'Manutencao',
                         icon: Icon(
-                          vehicle.hasMaintenancePlan ? Icons.build_circle : Icons.upload_file_outlined,
-                          color: vehicle.hasMaintenancePlan ? AppColors.statusMoving : null,
+                          Icons.build_circle,
+                          color: vehicle.kmUntilNextService != null && vehicle.kmUntilNextService! <= 500
+                              ? AppColors.statusStopped
+                              : (vehicle.hasStructuredMaintenance || vehicle.hasMaintenancePlan)
+                                  ? AppColors.statusMoving
+                                  : null,
                         ),
-                        onPressed: () => _manageMaintenancePlan(context, ref, user!, vehicle),
+                        onPressed: () => openVehicleMaintenanceSheet(context, ref, admin: user!, vehicle: vehicle),
                       ),
                       IconButton(
                         icon: const Icon(Icons.edit_outlined),

@@ -39,6 +39,11 @@ class Vehicle {
     this.maintenancePlanFileName,
     this.maintenancePlanUpdatedAt,
     this.maintenancePlanSizeBytes,
+    this.odometerKm,
+    this.nextServiceKm,
+    this.nextServiceDate,
+    this.lastServiceDate,
+    this.lastServiceNotes,
   });
 
   final String id;
@@ -54,9 +59,22 @@ class Vehicle {
   final String? maintenancePlanFileName;
   final DateTime? maintenancePlanUpdatedAt;
   final int? maintenancePlanSizeBytes;
+  final double? odometerKm;
+  final double? nextServiceKm;
+  final DateTime? nextServiceDate;
+  final DateTime? lastServiceDate;
+  final String? lastServiceNotes;
 
   bool get hasMaintenancePlan =>
       maintenancePlanFileName != null && maintenancePlanFileName!.isNotEmpty && (maintenancePlanSizeBytes ?? 0) > 0;
+
+  bool get hasStructuredMaintenance =>
+      odometerKm != null || nextServiceKm != null || nextServiceDate != null || lastServiceDate != null;
+
+  double? get kmUntilNextService {
+    if (odometerKm == null || nextServiceKm == null) return null;
+    return nextServiceKm! - odometerKm!;
+  }
 
   Vehicle copyWith({
     String? name,
@@ -71,6 +89,11 @@ class Vehicle {
     String? maintenancePlanFileName,
     DateTime? maintenancePlanUpdatedAt,
     int? maintenancePlanSizeBytes,
+    double? odometerKm,
+    double? nextServiceKm,
+    DateTime? nextServiceDate,
+    DateTime? lastServiceDate,
+    String? lastServiceNotes,
   }) {
     return Vehicle(
       id: id,
@@ -86,6 +109,11 @@ class Vehicle {
       maintenancePlanFileName: maintenancePlanFileName ?? this.maintenancePlanFileName,
       maintenancePlanUpdatedAt: maintenancePlanUpdatedAt ?? this.maintenancePlanUpdatedAt,
       maintenancePlanSizeBytes: maintenancePlanSizeBytes ?? this.maintenancePlanSizeBytes,
+      odometerKm: odometerKm ?? this.odometerKm,
+      nextServiceKm: nextServiceKm ?? this.nextServiceKm,
+      nextServiceDate: nextServiceDate ?? this.nextServiceDate,
+      lastServiceDate: lastServiceDate ?? this.lastServiceDate,
+      lastServiceNotes: lastServiceNotes ?? this.lastServiceNotes,
     );
   }
 }
@@ -240,6 +268,46 @@ class DriverIssueReport {
   final DateTime createdAt;
   final String? vehicleId;
   final String? vehicleName;
+}
+
+enum MaintenanceAlertKind { kmDue, dateDue }
+
+class MaintenanceAlert {
+  const MaintenanceAlert({
+    required this.vehicleId,
+    required this.vehicleName,
+    required this.kind,
+    required this.message,
+  });
+
+  final String vehicleId;
+  final String vehicleName;
+  final MaintenanceAlertKind kind;
+  final String message;
+}
+
+class MaintenanceLog {
+  const MaintenanceLog({
+    required this.id,
+    required this.vehicleId,
+    required this.serviceDate,
+    required this.odometerKm,
+    required this.serviceType,
+    required this.createdByName,
+    required this.createdAt,
+    this.notes,
+    this.cost,
+  });
+
+  final String id;
+  final String vehicleId;
+  final DateTime serviceDate;
+  final double odometerKm;
+  final String serviceType;
+  final String? notes;
+  final double? cost;
+  final String createdByName;
+  final DateTime createdAt;
 }
 
 class VehicleChecklistItemDef {

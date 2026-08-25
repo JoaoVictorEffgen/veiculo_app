@@ -87,6 +87,58 @@ class NamedKm {
   final double km;
 }
 
+class NamedSpeed {
+  const NamedSpeed({
+    required this.id,
+    required this.name,
+    required this.avgSpeedKmh,
+    required this.totalKm,
+    required this.movingTime,
+  });
+
+  final String id;
+  final String name;
+  final double avgSpeedKmh;
+  final double totalKm;
+  final Duration movingTime;
+}
+
+class TripSpeedRecord {
+  const TripSpeedRecord({
+    required this.driverId,
+    required this.driverName,
+    required this.vehicleName,
+    required this.startedAt,
+    required this.endedAt,
+    required this.distanceKm,
+    required this.avgSpeedKmh,
+  });
+
+  final String driverId;
+  final String driverName;
+  final String vehicleName;
+  final DateTime startedAt;
+  final DateTime endedAt;
+  final double distanceKm;
+  final double avgSpeedKmh;
+}
+
+class DriverHourlySpeed {
+  const DriverHourlySpeed({
+    required this.driverId,
+    required this.driverName,
+    required this.hourStart,
+    required this.km,
+    required this.avgSpeedKmh,
+  });
+
+  final String driverId;
+  final String driverName;
+  final DateTime hourStart;
+  final double km;
+  final double avgSpeedKmh;
+}
+
 class DailyKmPoint {
   const DailyKmPoint({required this.date, required this.km});
   final DateTime date;
@@ -103,10 +155,14 @@ class FleetAnalyticsReport {
     required this.dailyKmTrend,
     required this.totalKm,
     required this.tasksCompletedByDriver,
+    required this.avgSpeedByDriver,
+    required this.tripSpeedRecords,
+    required this.hourlySpeedByDriver,
     required this.topVehicle,
     required this.topDriver,
     required this.topDriverByKm,
     required this.topTaskDriver,
+    required this.topDriverBySpeed,
   });
 
   final DateTimeRange period;
@@ -117,8 +173,12 @@ class FleetAnalyticsReport {
   final List<DailyKmPoint> dailyKmTrend;
   final double totalKm;
   final List<NamedCount> tasksCompletedByDriver;
+  final List<NamedSpeed> avgSpeedByDriver;
+  final List<TripSpeedRecord> tripSpeedRecords;
+  final List<DriverHourlySpeed> hourlySpeedByDriver;
   final NamedCount? topVehicle;
   final NamedDuration? topDriver;
   final NamedKm? topDriverByKm;
   final NamedCount? topTaskDriver;
+  final NamedSpeed? topDriverBySpeed;
 }

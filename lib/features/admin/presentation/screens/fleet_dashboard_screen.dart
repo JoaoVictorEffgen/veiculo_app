@@ -54,6 +54,8 @@ class _DashboardBody extends ConsumerWidget {
           const FleetAnnouncementBanner(),
           const SizedBox(height: 8),
           _PeriodFilter(),
+          const SizedBox(height: 12),
+          _ExportActions(report: report),
           const SizedBox(height: 20),
           Row(
             children: [
@@ -81,13 +83,28 @@ class _DashboardBody extends ConsumerWidget {
             children: [
               Expanded(
                 child: CorporateMetricTile(
+                  label: 'Maior velocidade media',
+                  value: report.topDriverBySpeed == null
+                      ? '--'
+                      : '${report.topDriverBySpeed!.avgSpeedKmh.toStringAsFixed(0)} km/h',
+                  icon: Icons.speed,
+                  color: AppColors.accent,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: CorporateMetricTile(
                   label: 'Mais tempo dirigindo',
                   value: report.topDriver == null ? '--' : report.topDriver!.name.split(' ').first,
                   icon: Icons.timer_outlined,
                   color: AppColors.statusMovingDark,
                 ),
               ),
-              const SizedBox(width: 8),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
               Expanded(
                 child: CorporateMetricTile(
                   label: 'Veiculo mais usado',
@@ -96,9 +113,20 @@ class _DashboardBody extends ConsumerWidget {
                   color: AppColors.primaryDark,
                 ),
               ),
+              const Spacer(),
             ],
           ),
           const SizedBox(height: 24),
+          _ChartCard(
+            title: 'Velocidade media por motorista',
+            subtitle: 'Calculada pelas corridas com km registrado no periodo (km / tempo)',
+            child: _SpeedBarChart(data: report.avgSpeedByDriver),
+          ),
+          _ChartCard(
+            title: 'Corridas detalhadas',
+            subtitle: 'Ex.: das 13h as 14h percorreu X km com media Y km/h',
+            child: _TripSpeedList(records: report.tripSpeedRecords),
+          ),
           _ChartCard(
             title: 'Km por dia',
             subtitle: 'Evolucao diaria da frota — todos os veiculos somados',
@@ -598,6 +626,170 @@ class _GuideRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ExportActions extends ConsumerWidget {
+  const _ExportActions({required this.report});
+
+  final FleetAnalyticsReport report;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final exportService = ref.watch(fleetReportExportServiceProvider);
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () async {
+              try {
+                await exportService.shareCsv(report);
+              } catch (error) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao exportar CSV: $error')));
+                }
+              }
+            },
+            icon: const Icon(Icons.table_chart_outlined),
+            label: const Text('Exportar Excel (CSV)'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: () async {
+              try {
+                await exportService.sharePdf(report);
+              } catch (error) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao exportar PDF: $error')));
+                }
+              }
+            },
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('Exportar PDF'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SpeedBarChart extends StatelessWidget {
+  const _SpeedBarChart({required this.data});
+
+  final List<NamedSpeed> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = data.where((item) => item.avgSpeedKmh > 0).toList();
+    if (active.isEmpty) {
+      return const _EmptyChart(message: 'Sem corridas com km registrado para calcular velocidade.');
+    }
+
+    final maxY = active.map((item) => item.avgSpeedKmh).reduce((a, b) => a > b ? a : b);
+    final height = (active.length * 44.0).clamp(160.0, 320.0);
+
+    return SizedBox(
+      height: height,
+      child: BarChart(
+        BarChartData(
+          maxY: maxY <= 0 ? 1 : maxY * 1.15,
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 84,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index < 0 || index >= active.length) return const SizedBox.shrink();
+                  return Text(active[index].name.split(' ').first, style: const TextStyle(fontSize: 11));
+                },
+              ),
+            ),
+            bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 52,
+                getTitlesWidget: (value, meta) {
+                  final index = value.toInt();
+                  if (index < 0 || index >= active.length) return const SizedBox.shrink();
+                  return Text('${active[index].avgSpeedKmh.toStringAsFixed(0)} km/h', style: const TextStyle(fontSize: 10));
+                },
+              ),
+            ),
+          ),
+          gridData: FlGridData(show: true, drawVerticalLine: false),
+          borderData: FlBorderData(show: false),
+          barGroups: [
+            for (var i = 0; i < active.length; i++)
+              BarChartGroupData(
+                x: i,
+                barRods: [
+                  BarChartRodData(
+                    toY: active[i].avgSpeedKmh,
+                    color: AppColors.accent,
+                    width: 16,
+                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TripSpeedList extends StatelessWidget {
+  const _TripSpeedList({required this.records});
+
+  final List<TripSpeedRecord> records;
+
+  @override
+  Widget build(BuildContext context) {
+    if (records.isEmpty) {
+      return const _EmptyChart(message: 'Nenhuma corrida com distancia registrada neste periodo.');
+    }
+
+    final visible = records.take(20).toList();
+    return Column(
+      children: visible
+          .map(
+            (trip) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.timeline, size: 18, color: AppColors.accent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${trip.driverName} • ${trip.vehicleName}',
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
+                        Text(
+                          '${DateFormat('dd/MM HH:mm').format(trip.startedAt)} — ${DateFormat('HH:mm').format(trip.endedAt)}',
+                          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                        ),
+                        Text(
+                          '${trip.distanceKm.toStringAsFixed(1)} km • media ${trip.avgSpeedKmh.toStringAsFixed(1)} km/h',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .toList(),
     );
   }
 }

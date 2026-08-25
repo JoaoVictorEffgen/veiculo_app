@@ -42,6 +42,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
     final vehicles = ref.watch(vehicleControllerProvider);
     final adminAlerts = ref.watch(adminAlertsProvider).valueOrNull ?? const <FleetAdminAlert>[];
     final driverReports = ref.watch(driverIssueReportsProvider).valueOrNull ?? const <DriverIssueReport>[];
+    final maintenanceAlerts = ref.watch(maintenanceAlertsProvider);
     final now = DateTime.now();
 
     final idleVehicles = vehicles.where((vehicle) {
@@ -49,7 +50,7 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
       return now.difference(vehicle.stoppedAt!).inHours >= 24;
     }).toList();
 
-    final hasAlerts = idleVehicles.isNotEmpty || adminAlerts.isNotEmpty || driverReports.isNotEmpty;
+    final hasAlerts = idleVehicles.isNotEmpty || adminAlerts.isNotEmpty || driverReports.isNotEmpty || maintenanceAlerts.isNotEmpty;
 
     return AdminOnlyGate(
       child: Scaffold(
@@ -69,6 +70,11 @@ class _AlertsScreenState extends ConsumerState<AlertsScreen> {
                 icon: Icons.check_circle_outline,
                 message: 'Nenhum alerta relevante no momento.',
               ),
+            if (maintenanceAlerts.isNotEmpty) ...[
+              const CorporateSectionTitle(title: 'Manutencao dos veiculos'),
+              ...maintenanceAlerts.map((alert) => _MaintenanceAlertTile(alert: alert)),
+              const SizedBox(height: 16),
+            ],
             if (driverReports.isNotEmpty) ...[
               const CorporateSectionTitle(title: 'Relatos de problemas'),
               ...driverReports.map((report) => _DriverReportCard(report: report)),
@@ -236,6 +242,27 @@ class _AdminAlertCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MaintenanceAlertTile extends StatelessWidget {
+  const _MaintenanceAlertTile({required this.alert});
+
+  final MaintenanceAlert alert;
+
+  @override
+  Widget build(BuildContext context) {
+    return CorporateSurface(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(
+          alert.kind == MaintenanceAlertKind.kmDue ? Icons.speed_outlined : Icons.event_busy_outlined,
+          color: AppColors.statusStopped,
+        ),
+        title: Text(alert.vehicleName, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(alert.message),
       ),
     );
   }

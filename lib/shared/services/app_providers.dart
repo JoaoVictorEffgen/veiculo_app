@@ -8,6 +8,8 @@ import '../models/auth_session.dart';
 import '../models/fleet_analytics.dart';
 import 'driver_track_filter.dart';
 import 'fleet_analytics_service.dart';
+import 'fleet_report_export_service.dart';
+import 'maintenance_alert_service.dart';
 import 'location_tracking_service.dart';
 import 'login_preferences_service.dart';
 import 'vehicle_repository.dart';
@@ -182,6 +184,50 @@ class AdminController extends StateNotifier<int> {
     if (error == null) state++;
     return error;
   }
+
+  Future<String?> updateVehicleMaintenance(
+    AppUser actor,
+    String vehicleId, {
+    double? odometerKm,
+    double? nextServiceKm,
+    DateTime? nextServiceDate,
+    DateTime? lastServiceDate,
+    String? lastServiceNotes,
+  }) async {
+    final error = await _repository.updateVehicleMaintenance(
+      actor,
+      vehicleId,
+      odometerKm: odometerKm,
+      nextServiceKm: nextServiceKm,
+      nextServiceDate: nextServiceDate,
+      lastServiceDate: lastServiceDate,
+      lastServiceNotes: lastServiceNotes,
+    );
+    if (error == null) state++;
+    return error;
+  }
+
+  Future<String?> addMaintenanceLog(
+    AppUser actor,
+    String vehicleId, {
+    required DateTime serviceDate,
+    required double odometerKm,
+    required String serviceType,
+    String? notes,
+    double? cost,
+  }) async {
+    final error = await _repository.addMaintenanceLog(
+      actor,
+      vehicleId,
+      serviceDate: serviceDate,
+      odometerKm: odometerKm,
+      serviceType: serviceType,
+      notes: notes,
+      cost: cost,
+    );
+    if (error == null) state++;
+    return error;
+  }
 }
 
 final adminControllerProvider = StateNotifierProvider<AdminController, int>((ref) {
@@ -311,6 +357,20 @@ final fleetPeriodProvider = StateProvider<FleetPeriodSelection>(
 );
 
 final fleetAnalyticsServiceProvider = Provider<FleetAnalyticsService>((ref) => FleetAnalyticsService());
+
+final fleetReportExportServiceProvider = Provider<FleetReportExportService>((ref) => FleetReportExportService());
+
+final maintenanceAlertServiceProvider = Provider<MaintenanceAlertService>((ref) => MaintenanceAlertService());
+
+final maintenanceAlertsProvider = Provider<List<MaintenanceAlert>>((ref) {
+  final vehicles = ref.watch(vehicleControllerProvider);
+  return ref.watch(maintenanceAlertServiceProvider).compute(vehicles);
+});
+
+final maintenanceLogsProvider = StreamProvider.family<List<MaintenanceLog>, String>((ref, vehicleId) {
+  ref.watch(adminControllerProvider);
+  return ref.watch(repositoryProvider).watchMaintenanceLogs(vehicleId);
+});
 
 final fleetAnalyticsProvider = Provider<AsyncValue<FleetAnalyticsReport>>((ref) {
   final user = ref.watch(authControllerProvider).user;

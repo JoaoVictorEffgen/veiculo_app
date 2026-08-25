@@ -63,6 +63,25 @@ abstract class VehicleRepository {
   Future<String?> uploadMaintenancePlan(AppUser actor, String vehicleId, List<int> bytes, String fileName);
   Future<String?> removeMaintenancePlan(AppUser actor, String vehicleId);
   Future<Uint8List?> fetchMaintenancePlanBytes(String vehicleId);
+  Future<String?> updateVehicleMaintenance(
+    AppUser actor,
+    String vehicleId, {
+    double? odometerKm,
+    double? nextServiceKm,
+    DateTime? nextServiceDate,
+    DateTime? lastServiceDate,
+    String? lastServiceNotes,
+  });
+  Future<String?> addMaintenanceLog(
+    AppUser actor,
+    String vehicleId, {
+    required DateTime serviceDate,
+    required double odometerKm,
+    required String serviceType,
+    String? notes,
+    double? cost,
+  });
+  Stream<List<MaintenanceLog>> watchMaintenanceLogs(String vehicleId);
   Future<String?> addDriver(AppUser actor, {required String name, required String email, required String password});
   Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, String? password});
   Future<String?> deleteDriver(AppUser actor, String driverId);

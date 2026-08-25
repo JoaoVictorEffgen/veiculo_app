@@ -594,14 +594,18 @@ class FirebaseVehicleRepository implements VehicleRepository {
           throw StateError('Somente o motorista responsavel pode parar o veiculo.');
         }
         final now = Timestamp.now();
-        transaction.update(vehicleRef, {
+        final updateData = <String, dynamic>{
           'status': VehicleStatus.stopped.name,
           'stoppedAt': now,
           'stoppedLocation': location.trim(),
           'currentDriverId': FieldValue.delete(),
           'currentDriverName': FieldValue.delete(),
           'startedAt': FieldValue.delete(),
-        });
+        };
+        if (distanceKm != null && distanceKm > 0 && current.odometerKm != null) {
+          updateData['odometerKm'] = double.parse((current.odometerKm! + distanceKm).toStringAsFixed(1));
+        }
+        transaction.update(vehicleRef, updateData);
         final movementRef = _firestore.collection(FirestorePaths.movements).doc();
         transaction.set(movementRef, {
           'vehicleId': vehicleId,
@@ -796,6 +800,102 @@ class FirebaseVehicleRepository implements VehicleRepository {
       debugPrint('Falha ao baixar plano de manutencao: ${error.message}');
       return null;
     }
+  }
+
+  @override
+  Future<String?> updateVehicleMaintenance(
+    AppUser actor,
+    String vehicleId, {
+    double? odometerKm,
+    double? nextServiceKm,
+    DateTime? nextServiceDate,
+    DateTime? lastServiceDate,
+    String? lastServiceNotes,
+  }) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar manutencao.';
+    try {
+      final update = <String, dynamic>{};
+      if (odometerKm != null) update['odometerKm'] = double.parse(odometerKm.toStringAsFixed(1));
+      if (nextServiceKm != null) update['nextServiceKm'] = double.parse(nextServiceKm.toStringAsFixed(1));
+      if (nextServiceDate != null) update['nextServiceDate'] = Timestamp.fromDate(nextServiceDate);
+      if (lastServiceDate != null) update['lastServiceDate'] = Timestamp.fromDate(lastServiceDate);
+      if (lastServiceNotes != null) update['lastServiceNotes'] = lastServiceNotes.trim();
+      if (update.isEmpty) return 'Informe ao menos um campo de manutencao.';
+
+      await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).update(update);
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao salvar manutencao.';
+    }
+  }
+
+  @override
+  Future<String?> addMaintenanceLog(
+    AppUser actor,
+    String vehicleId, {
+    required DateTime serviceDate,
+    required double odometerKm,
+    required String serviceType,
+    String? notes,
+    double? cost,
+  }) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem registrar servicos.';
+    final type = serviceType.trim();
+    if (type.isEmpty) return 'Informe o tipo de servico.';
+
+    try {
+      final vehicleRef = _firestore.collection(FirestorePaths.vehicles).doc(vehicleId);
+      final vehicleSnap = await vehicleRef.get();
+      if (!vehicleSnap.exists) return 'Veiculo nao encontrado.';
+
+      await vehicleRef.collection(FirestorePaths.maintenanceLogs).add({
+        'serviceDate': Timestamp.fromDate(serviceDate),
+        'odometerKm': double.parse(odometerKm.toStringAsFixed(1)),
+        'serviceType': type,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        if (cost != null && cost > 0) 'cost': double.parse(cost.toStringAsFixed(2)),
+        'createdByName': actor.name,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await vehicleRef.update({
+        'odometerKm': double.parse(odometerKm.toStringAsFixed(1)),
+        'lastServiceDate': Timestamp.fromDate(serviceDate),
+        'lastServiceNotes': notes?.trim().isNotEmpty == true ? notes!.trim() : type,
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao registrar servico.';
+    }
+  }
+
+  @override
+  Stream<List<MaintenanceLog>> watchMaintenanceLogs(String vehicleId) {
+    return _firestore
+        .collection(FirestorePaths.vehicles)
+        .doc(vehicleId)
+        .collection(FirestorePaths.maintenanceLogs)
+        .snapshots()
+        .map((snapshot) {
+      final logs = snapshot.docs.map(_maintenanceLogFromDoc).toList();
+      logs.sort((a, b) => b.serviceDate.compareTo(a.serviceDate));
+      return logs;
+    });
+  }
+
+  MaintenanceLog _maintenanceLogFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
+    return MaintenanceLog(
+      id: doc.id,
+      vehicleId: doc.reference.parent.parent?.id ?? '',
+      serviceDate: (data['serviceDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      odometerKm: (data['odometerKm'] as num?)?.toDouble() ?? 0,
+      serviceType: data['serviceType'] as String? ?? 'Servico',
+      notes: data['notes'] as String?,
+      cost: (data['cost'] as num?)?.toDouble(),
+      createdByName: data['createdByName'] as String? ?? 'Admin',
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
   }
 
   Future<void> _deleteMaintenanceChunks(String vehicleId) async {
@@ -1023,6 +1123,11 @@ class FirebaseVehicleRepository implements VehicleRepository {
       maintenancePlanFileName: data['maintenancePlanFileName'] as String?,
       maintenancePlanUpdatedAt: (data['maintenancePlanUpdatedAt'] as Timestamp?)?.toDate(),
       maintenancePlanSizeBytes: (data['maintenancePlanSizeBytes'] as num?)?.toInt(),
+      odometerKm: (data['odometerKm'] as num?)?.toDouble(),
+      nextServiceKm: (data['nextServiceKm'] as num?)?.toDouble(),
+      nextServiceDate: (data['nextServiceDate'] as Timestamp?)?.toDate(),
+      lastServiceDate: (data['lastServiceDate'] as Timestamp?)?.toDate(),
+      lastServiceNotes: data['lastServiceNotes'] as String?,
     );
   }
 
@@ -1143,6 +1248,11 @@ class FirebaseVehicleRepository implements VehicleRepository {
         if (vehicle.maintenancePlanUpdatedAt != null)
           'maintenancePlanUpdatedAt': Timestamp.fromDate(vehicle.maintenancePlanUpdatedAt!),
         if (vehicle.maintenancePlanSizeBytes != null) 'maintenancePlanSizeBytes': vehicle.maintenancePlanSizeBytes,
+        if (vehicle.odometerKm != null) 'odometerKm': vehicle.odometerKm,
+        if (vehicle.nextServiceKm != null) 'nextServiceKm': vehicle.nextServiceKm,
+        if (vehicle.nextServiceDate != null) 'nextServiceDate': Timestamp.fromDate(vehicle.nextServiceDate!),
+        if (vehicle.lastServiceDate != null) 'lastServiceDate': Timestamp.fromDate(vehicle.lastServiceDate!),
+        if (vehicle.lastServiceNotes != null) 'lastServiceNotes': vehicle.lastServiceNotes,
       };
 
   String _formatTime(DateTime? value) {

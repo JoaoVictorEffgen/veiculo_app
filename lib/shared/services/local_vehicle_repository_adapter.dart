@@ -224,6 +224,33 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   Future<Uint8List?> fetchMaintenancePlanBytes(String vehicleId) async => null;
 
   @override
+  Future<String?> updateVehicleMaintenance(
+    AppUser actor,
+    String vehicleId, {
+    double? odometerKm,
+    double? nextServiceKm,
+    DateTime? nextServiceDate,
+    DateTime? lastServiceDate,
+    String? lastServiceNotes,
+  }) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
+  Future<String?> addMaintenanceLog(
+    AppUser actor,
+    String vehicleId, {
+    required DateTime serviceDate,
+    required double odometerKm,
+    required String serviceType,
+    String? notes,
+    double? cost,
+  }) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
+  Stream<List<MaintenanceLog>> watchMaintenanceLogs(String vehicleId) => Stream.value(const []);
+
+  @override
   Future<String?> addDriver(AppUser actor, {required String name, required String email, required String password}) async {
     try {
       await _local.addDriver(actor, name: name, email: email, password: password);

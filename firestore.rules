@@ -144,6 +144,11 @@ service cloud.firestore {
         allow read: if isSignedIn();
         allow write: if isAdmin();
       }
+
+      match /maintenance_logs/{logId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isAdmin();
+      }
     }
 
     match /movements/{movementId} {
