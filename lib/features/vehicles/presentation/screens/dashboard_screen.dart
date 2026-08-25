@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../../app/theme.dart';
 import '../../../../core/utils/date_formatter.dart';
@@ -9,6 +10,7 @@ import '../../../../core/utils/loading_dialog.dart';
 import '../../../../core/widgets/fleet_announcement_banner.dart';
 import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../core/widgets/vehicle_checklist_sheet.dart';
+import '../../../../core/widgets/vehicle_location_map_preview.dart';
 import '../../../../core/utils/iterable_extensions.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
@@ -162,6 +164,10 @@ class _ActiveTripBanner extends StatelessWidget {
             Text(permissionIssue!, style: const TextStyle(color: AppColors.statusStopped, fontSize: 12)),
             TextButton(onPressed: onOpenSettings, child: const Text('Abrir configuracoes')),
           ],
+          if (myTrack != null) ...[
+            const SizedBox(height: 12),
+            VehicleLocationMapPreview.live(track: myTrack!),
+          ],
         ],
       ),
     );
@@ -242,6 +248,10 @@ class _VehicleCard extends StatelessWidget {
             FleetInfoRow(icon: Icons.place_outlined, label: 'Local', value: vehicle.stoppedLocation ?? 'Nao informado'),
             if (vehicle.stoppedAt != null)
               FleetInfoRow(icon: Icons.schedule, label: 'Parado desde', value: formatTime(vehicle.stoppedAt)),
+            if (vehicle.hasStoppedCoordinates) ...[
+              const SizedBox(height: 12),
+              _ParkedVehicleMapSection(vehicle: vehicle),
+            ],
           ],
           const SizedBox(height: 14),
           if (isMoving && isMine)
@@ -356,7 +366,10 @@ class _VehicleCard extends StatelessWidget {
     final error = await ref.read(vehicleControllerProvider.notifier).start(vehicle.id, operator);
     if (error != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
     }
+
+    unawaited(ref.read(tripStartVoiceServiceProvider).announceTripStart(operator.name));
   }
 
   Future<void> _stop(BuildContext context) async {
@@ -440,5 +453,77 @@ class _VehicleCard extends StatelessWidget {
         SnackBar(content: Text('Corrida registrada: ${distanceKm.toStringAsFixed(1)} km')),
       );
     }
+  }
+}
+
+class _ParkedVehicleMapSection extends ConsumerStatefulWidget {
+  const _ParkedVehicleMapSection({required this.vehicle});
+
+  final Vehicle vehicle;
+
+  @override
+  ConsumerState<_ParkedVehicleMapSection> createState() => _ParkedVehicleMapSectionState();
+}
+
+class _ParkedVehicleMapSectionState extends ConsumerState<_ParkedVehicleMapSection> {
+  final _distance = const Distance();
+  LatLng? _myPosition;
+  var _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_refreshDistance()));
+  }
+
+  Future<void> _refreshDistance() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    final snapshot = await ref.read(locationTrackingServiceProvider).getCurrentCoordinates();
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _myPosition = snapshot == null ? null : LatLng(snapshot.latitude, snapshot.longitude);
+    });
+  }
+
+  String? _distanceLabel() {
+    if (_myPosition == null || !widget.vehicle.hasStoppedCoordinates) return null;
+    final km = _distance.as(
+      LengthUnit.Kilometer,
+      _myPosition!,
+      LatLng(widget.vehicle.stoppedLatitude!, widget.vehicle.stoppedLongitude!),
+    );
+    if (km < 1) return '${(km * 1000).round()} m de voce';
+    return '${km.toStringAsFixed(1)} km de voce';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Ultima localizacao no mapa',
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        VehicleLocationMapPreview.parked(
+          vehicle: widget.vehicle,
+          distanceLabel: _distanceLabel(),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: _loading ? null : _refreshDistance,
+            icon: _loading
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.my_location, size: 18),
+            label: const Text('Calcular distancia ate mim'),
+          ),
+        ),
+      ],
+    );
   }
 }

@@ -1286,7 +1286,6 @@ class FirebaseVehicleRepository implements VehicleRepository {
       items: rawItems.map((key, value) => MapEntry(key, value == true)),
       completedAt: (data['completedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       notes: data['notes'] as String?,
-      photoUrls: (data['photoUrls'] as List<dynamic>? ?? const []).map((item) => item.toString()).toList(),
       signatureBase64: data['signatureBase64'] as String?,
     );
   }

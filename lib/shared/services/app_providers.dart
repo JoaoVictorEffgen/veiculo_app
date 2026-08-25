@@ -12,6 +12,7 @@ import 'fleet_report_export_service.dart';
 import 'maintenance_alert_service.dart';
 import 'location_tracking_service.dart';
 import 'login_preferences_service.dart';
+import 'trip_start_voice_service.dart';
 import 'vehicle_repository.dart';
 
 final repositoryProvider = Provider<VehicleRepository>((ref) {
@@ -22,6 +23,12 @@ final loginPreferencesServiceProvider = Provider<LoginPreferencesService>((ref) 
 
 final locationTrackingServiceProvider = Provider<LocationTrackingService>((ref) {
   throw UnimplementedError('locationTrackingServiceProvider must be overridden in main.dart');
+});
+
+final tripStartVoiceServiceProvider = Provider<TripStartVoiceService>((ref) {
+  final service = TripStartVoiceService();
+  ref.onDispose(service.dispose);
+  return service;
 });
 
 class AuthController extends StateNotifier<AuthSession> {
