@@ -54,7 +54,7 @@ class AppTheme {
         displayColor: AppColors.textPrimary,
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.primary,
+        backgroundColor: AppColors.accent,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -76,7 +76,7 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.accent,
+          backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
           minimumSize: const Size.fromHeight(52),
           textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.4),
@@ -121,7 +121,7 @@ class AppTheme {
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.accent),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.accent,
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
     );
