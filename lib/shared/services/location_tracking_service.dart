@@ -354,6 +354,11 @@ class LocationTrackingService {
   Future<void> openPermissionSettings() => Geolocator.openAppSettings();
 
   Future<String?> resolveCurrentLocationLabel() async {
+    final snapshot = await resolveCurrentStopLocation();
+    return snapshot?.label;
+  }
+
+  Future<StopLocationSnapshot?> resolveCurrentStopLocation() async {
     try {
       final granted = await ensurePermission(requireBackground: false);
       if (!granted) return null;
@@ -363,15 +368,22 @@ class LocationTrackingService {
         const Duration(seconds: 10),
         onTimeout: () => throw TimeoutException('GPS timeout'),
       );
-      return await _formatLocationLabel(position).timeout(
+      final label = await _formatLocationLabel(position).timeout(
         const Duration(seconds: 8),
         onTimeout: () => '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}',
+      );
+      return StopLocationSnapshot(
+        label: label,
+        latitude: position.latitude,
+        longitude: position.longitude,
       );
     } catch (error) {
       debugPrint('GPS: falha ao obter localizacao atual: $error');
       return null;
     }
   }
+
+  Future<StopLocationSnapshot?> getCurrentCoordinates() => resolveCurrentStopLocation();
 
   Future<String> _formatLocationLabel(Position position) async {
     try {

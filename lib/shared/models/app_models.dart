@@ -4,6 +4,18 @@ enum VehicleStatus { moving, stopped }
 
 enum MovementAction { on, off }
 
+class StopLocationSnapshot {
+  const StopLocationSnapshot({
+    required this.label,
+    required this.latitude,
+    required this.longitude,
+  });
+
+  final String label;
+  final double latitude;
+  final double longitude;
+}
+
 class AppUser {
   const AppUser({
     required this.id,
@@ -36,6 +48,8 @@ class Vehicle {
     this.startedAt,
     this.stoppedAt,
     this.stoppedLocation,
+    this.stoppedLatitude,
+    this.stoppedLongitude,
     this.maintenancePlanFileName,
     this.maintenancePlanUpdatedAt,
     this.maintenancePlanSizeBytes,
@@ -56,6 +70,8 @@ class Vehicle {
   final DateTime? startedAt;
   final DateTime? stoppedAt;
   final String? stoppedLocation;
+  final double? stoppedLatitude;
+  final double? stoppedLongitude;
   final String? maintenancePlanFileName;
   final DateTime? maintenancePlanUpdatedAt;
   final int? maintenancePlanSizeBytes;
@@ -76,6 +92,8 @@ class Vehicle {
     return nextServiceKm! - odometerKm!;
   }
 
+  bool get hasStoppedCoordinates => stoppedLatitude != null && stoppedLongitude != null;
+
   Vehicle copyWith({
     String? name,
     String? model,
@@ -86,6 +104,8 @@ class Vehicle {
     DateTime? startedAt,
     DateTime? stoppedAt,
     String? stoppedLocation,
+    double? stoppedLatitude,
+    double? stoppedLongitude,
     String? maintenancePlanFileName,
     DateTime? maintenancePlanUpdatedAt,
     int? maintenancePlanSizeBytes,
@@ -106,6 +126,8 @@ class Vehicle {
       startedAt: startedAt ?? this.startedAt,
       stoppedAt: stoppedAt ?? this.stoppedAt,
       stoppedLocation: stoppedLocation ?? this.stoppedLocation,
+      stoppedLatitude: stoppedLatitude ?? this.stoppedLatitude,
+      stoppedLongitude: stoppedLongitude ?? this.stoppedLongitude,
       maintenancePlanFileName: maintenancePlanFileName ?? this.maintenancePlanFileName,
       maintenancePlanUpdatedAt: maintenancePlanUpdatedAt ?? this.maintenancePlanUpdatedAt,
       maintenancePlanSizeBytes: maintenancePlanSizeBytes ?? this.maintenancePlanSizeBytes,

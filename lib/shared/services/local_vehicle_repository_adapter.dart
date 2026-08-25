@@ -164,7 +164,7 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   Future<void> purgeOrphanedTracking(List<String> driverIds) async {}
 
   @override
-  Future<String?> stopVehicle(String vehicleId, AppUser user, String location, {double? distanceKm}) async {
+  Future<String?> stopVehicle(String vehicleId, AppUser user, String location, {double? distanceKm, double? stoppedLatitude, double? stoppedLongitude}) async {
     try {
       _local.stopVehicle(vehicleId, user, location);
       _sync();

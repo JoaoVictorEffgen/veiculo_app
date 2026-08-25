@@ -580,6 +580,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
           'startedAt': now,
           'stoppedAt': FieldValue.delete(),
           'stoppedLocation': FieldValue.delete(),
+          'stoppedLatitude': FieldValue.delete(),
+          'stoppedLongitude': FieldValue.delete(),
         });
         final movementRef = _firestore.collection(FirestorePaths.movements).doc();
         transaction.set(movementRef, {
@@ -603,11 +605,33 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   @override
-  Future<String?> stopVehicle(String vehicleId, AppUser user, String location, {double? distanceKm}) async {
+  Future<String?> stopVehicle(
+    String vehicleId,
+    AppUser user,
+    String location, {
+    double? distanceKm,
+    double? stoppedLatitude,
+    double? stoppedLongitude,
+  }) async {
     final authUser = _auth.currentUser;
     if (authUser == null) return 'Sessao expirada. Faca login novamente.';
     if (authUser.uid != user.id) return 'Sessao invalida. Faca login novamente.';
     final driverId = authUser.uid;
+
+    var latitude = stoppedLatitude;
+    var longitude = stoppedLongitude;
+    if (latitude == null || longitude == null) {
+      try {
+        final trackingDoc = await _firestore.collection(FirestorePaths.tracking).doc(driverId).get();
+        if (trackingDoc.exists) {
+          final data = trackingDoc.data();
+          latitude ??= (data?['latitude'] as num?)?.toDouble();
+          longitude ??= (data?['longitude'] as num?)?.toDouble();
+        }
+      } catch (error) {
+        debugPrint('GPS: falha ao ler ultima posicao do tracking: $error');
+      }
+    }
 
     try {
       await _firestore.runTransaction((transaction) async {
@@ -630,6 +654,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
         };
         if (distanceKm != null && distanceKm > 0 && current.odometerKm != null) {
           updateData['odometerKm'] = double.parse((current.odometerKm! + distanceKm).toStringAsFixed(1));
+        }
+        if (latitude != null && longitude != null) {
+          updateData['stoppedLatitude'] = latitude;
+          updateData['stoppedLongitude'] = longitude;
         }
         transaction.update(vehicleRef, updateData);
         final movementRef = _firestore.collection(FirestorePaths.movements).doc();
@@ -1144,6 +1172,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
       startedAt: (data['startedAt'] as Timestamp?)?.toDate(),
       stoppedAt: (data['stoppedAt'] as Timestamp?)?.toDate(),
       stoppedLocation: data['stoppedLocation'] as String?,
+      stoppedLatitude: (data['stoppedLatitude'] as num?)?.toDouble(),
+      stoppedLongitude: (data['stoppedLongitude'] as num?)?.toDouble(),
       maintenancePlanFileName: data['maintenancePlanFileName'] as String?,
       maintenancePlanUpdatedAt: (data['maintenancePlanUpdatedAt'] as Timestamp?)?.toDate(),
       maintenancePlanSizeBytes: (data['maintenancePlanSizeBytes'] as num?)?.toInt(),
@@ -1271,6 +1301,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'startedAt': vehicle.startedAt == null ? null : Timestamp.fromDate(vehicle.startedAt!),
         'stoppedAt': vehicle.stoppedAt == null ? null : Timestamp.fromDate(vehicle.stoppedAt!),
         'stoppedLocation': vehicle.stoppedLocation,
+        if (vehicle.stoppedLatitude != null) 'stoppedLatitude': vehicle.stoppedLatitude,
+        if (vehicle.stoppedLongitude != null) 'stoppedLongitude': vehicle.stoppedLongitude,
         if (vehicle.maintenancePlanFileName != null) 'maintenancePlanFileName': vehicle.maintenancePlanFileName,
         if (vehicle.maintenancePlanUpdatedAt != null)
           'maintenancePlanUpdatedAt': Timestamp.fromDate(vehicle.maintenancePlanUpdatedAt!),

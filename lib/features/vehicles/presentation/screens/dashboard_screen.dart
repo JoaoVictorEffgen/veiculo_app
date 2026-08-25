@@ -362,18 +362,18 @@ class _VehicleCard extends StatelessWidget {
   Future<void> _stop(BuildContext context) async {
     if (!context.mounted) return;
 
-    final detected = await runWithBlockingLoadingDialog<String?>(
+    final detected = await runWithBlockingLoadingDialog<StopLocationSnapshot?>(
       context,
       message: 'Obtendo localizacao atual...',
       action: () => ref
           .read(locationTrackingServiceProvider)
-          .resolveCurrentLocationLabel()
+          .resolveCurrentStopLocation()
           .timeout(const Duration(seconds: 12), onTimeout: () => null),
     );
 
     if (!context.mounted) return;
 
-    final controller = TextEditingController(text: detected ?? '');
+    final controller = TextEditingController(text: detected?.label ?? '');
     final location = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -422,6 +422,8 @@ class _VehicleCard extends StatelessWidget {
             user!,
             location,
             distanceKm: distanceKm > 0 ? distanceKm : null,
+            stoppedLatitude: detected?.latitude,
+            stoppedLongitude: detected?.longitude,
           )
           .timeout(const Duration(seconds: 15), onTimeout: () => 'Tempo esgotado ao registrar parada.'),
     );
