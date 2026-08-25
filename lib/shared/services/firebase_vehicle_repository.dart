@@ -1288,4 +1288,16 @@ class FirebaseVehicleRepository implements VehicleRepository {
     return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
-  String _authErrorMessage(
+  String _authErrorMessage(FirebaseAuthException error) {
+    switch (error.code) {
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'E-mail ou senha invalidos.';
+      case 'email-already-in-use':
+        return 'Ja existe um usuario com esse e-mail.';
+      default:
+        return error.message ?? 'Erro de autenticacao.';
+    }
+  }
+}
