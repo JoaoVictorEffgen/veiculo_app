@@ -7,11 +7,17 @@ service cloud.firestore {
     }
 
     function userDoc() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        : null;
     }
 
     function isAdmin() {
-      return isSignedIn() && userDoc().role == 'admin';
+      return isSignedIn() && userDoc() != null && userDoc().role == 'admin';
+    }
+
+    function isOwnUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function isOwnFcmTokenUpdate(userId) {
@@ -129,8 +135,8 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
-      allow create: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow read: if isOwnUser(userId) || isAdmin();
+      allow create: if isOwnUser(userId) || isAdmin();
       allow update: if isAdmin() || isOwnFcmTokenUpdate(userId);
       allow delete: if isAdmin();
     }

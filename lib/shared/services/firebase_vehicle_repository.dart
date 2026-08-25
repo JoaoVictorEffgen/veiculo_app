@@ -46,16 +46,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
         yield _cachedUser;
       }
 
-      final loaded = await _loadAppUser(firebaseUser.uid);
-      if (loaded == null) {
-        await ensureSeedData();
-        _cachedUser = await _loadAppUser(firebaseUser.uid);
-        yield _cachedUser;
-        continue;
-      }
-
+      final loaded = await _ensureUserProfile(firebaseUser, firebaseUser.email?.trim().toLowerCase() ?? '');
       _cachedUser = loaded;
       yield loaded;
+      continue;
     }
   }
 
@@ -85,11 +79,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       }
 
       await ensureSeedData();
-      _cachedUser = await _loadAppUser(credential.user!.uid);
-      if (_cachedUser == null) {
-        await _repairSeedUserProfile(credential.user!.uid, normalizedEmail);
-        _cachedUser = await _loadAppUser(credential.user!.uid);
-      }
+      _cachedUser = await _ensureUserProfile(credential.user!, normalizedEmail);
       if (_cachedUser == null) return 'Usuario sem cadastro no sistema.';
       return null;
     } on FirebaseAuthException catch (error) {
@@ -1148,6 +1138,36 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   bool _isSeedEmail(String normalizedEmail) {
     return _seedUsers.any((seed) => seed.email.trim().toLowerCase() == normalizedEmail);
+  }
+
+  Future<AppUser?> _ensureUserProfile(User firebaseUser, String normalizedEmail) async {
+    final uid = firebaseUser.uid;
+    final email = normalizedEmail.isNotEmpty
+        ? normalizedEmail
+        : firebaseUser.email?.trim().toLowerCase() ?? '';
+
+    var profile = await _loadAppUser(uid);
+    if (profile != null) return profile;
+
+    if (!_isSeedEmail(email)) return null;
+
+    await _repairSeedUserProfile(uid, email);
+    profile = await _loadAppUser(uid);
+    if (profile != null) return profile;
+
+    return _appUserFromSeed(uid, email);
+  }
+
+  AppUser? _appUserFromSeed(String uid, String normalizedEmail) {
+    final seed = _seedUsers.where((item) => item.email.trim().toLowerCase() == normalizedEmail).firstOrNull;
+    if (seed == null) return null;
+    return AppUser(
+      id: uid,
+      name: seed.name,
+      email: normalizedEmail,
+      password: '',
+      role: seed.role,
+    );
   }
 
   Future<void> _repairSeedUserProfile(String uid, String normalizedEmail) async {
