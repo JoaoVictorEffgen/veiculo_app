@@ -352,6 +352,10 @@ VehicleChecklist? todayChecklistForVehicle(WidgetRef ref, String vehicleId) {
   return null;
 }
 
+final alertsPeriodProvider = StateProvider<FleetPeriodSelection>(
+  (ref) => const FleetPeriodSelection(preset: FleetPeriodPreset.last30Days),
+);
+
 final fleetPeriodProvider = StateProvider<FleetPeriodSelection>(
   (ref) => const FleetPeriodSelection(preset: FleetPeriodPreset.last30Days),
 );
@@ -383,8 +387,9 @@ final fleetAnalyticsProvider = Provider<AsyncValue<FleetAnalyticsReport>>((ref) 
   final vehicles = ref.watch(vehicleControllerProvider);
   final usersAsync = ref.watch(usersProvider);
   final adminAlertsAsync = ref.watch(adminAlertsProvider);
+  final driverReportsAsync = ref.watch(driverIssueReportsProvider);
 
-  if (movementsAsync.isLoading || usersAsync.isLoading || adminAlertsAsync.isLoading) {
+  if (movementsAsync.isLoading || usersAsync.isLoading || adminAlertsAsync.isLoading || driverReportsAsync.isLoading) {
     return const AsyncValue.loading();
   }
   if (movementsAsync.hasError) {
@@ -396,6 +401,9 @@ final fleetAnalyticsProvider = Provider<AsyncValue<FleetAnalyticsReport>>((ref) 
   if (adminAlertsAsync.hasError) {
     return AsyncValue.error(adminAlertsAsync.error!, adminAlertsAsync.stackTrace ?? StackTrace.empty);
   }
+  if (driverReportsAsync.hasError) {
+    return AsyncValue.error(driverReportsAsync.error!, driverReportsAsync.stackTrace ?? StackTrace.empty);
+  }
 
   final drivers = usersAsync.valueOrNull?.where((item) => item.role == UserRole.driver).toList() ?? [];
   final report = ref.read(fleetAnalyticsServiceProvider).compute(
@@ -403,6 +411,7 @@ final fleetAnalyticsProvider = Provider<AsyncValue<FleetAnalyticsReport>>((ref) 
         vehicles: vehicles,
         drivers: drivers,
         taskAlerts: adminAlertsAsync.valueOrNull ?? const [],
+        driverReports: driverReportsAsync.valueOrNull ?? const [],
         periodSelection: period,
       );
   return AsyncValue.data(report);

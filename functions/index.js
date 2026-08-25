@@ -96,6 +96,71 @@ exports.onAnnouncementUpdated = functions.firestore
     });
   });
 
+exports.onDriverReportCreated = functions.firestore
+  .document('driver_reports/{reportId}')
+  .onCreate(async (snap) => {
+    const data = snap.data();
+    if (!data) return null;
+
+    const tokens = await collectAdminTokens();
+    if (tokens.length === 0) return null;
+
+    const driverName = data.driverName || 'Motorista';
+    const vehicleLabel = data.vehicleName ? ` • ${data.vehicleName}` : '';
+    const body = (data.message || 'Novo relato recebido.').slice(0, 180);
+
+    return admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: {
+        title: 'Novo relato de problema',
+        body: `${driverName}${vehicleLabel}: ${body}`,
+      },
+      data: {
+        type: 'driver_report',
+        reportId: snap.id,
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'fleet_announcements',
+        },
+      },
+    });
+  });
+
+exports.onDriverReportUpdated = functions.firestore
+  .document('driver_reports/{reportId}')
+  .onUpdate(async (change) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    if (!before || !after) return null;
+    if (before.adminReply || !after.adminReply) return null;
+    if (!after.driverId) return null;
+
+    const tokens = await collectDriverTokens(after.driverId);
+    if (tokens.length === 0) return null;
+
+    const replyPreview = String(after.adminReply).slice(0, 180);
+
+    return admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: {
+        title: 'Resposta ao seu relato',
+        body: replyPreview,
+      },
+      data: {
+        type: 'driver_report_reply',
+        reportId: change.after.id,
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'fleet_announcements',
+        },
+      },
+    });
+  });
+
 exports.purgeExpiredAnnouncements = functions.pubsub
   .schedule('every 15 minutes')
   .onRun(async () => {

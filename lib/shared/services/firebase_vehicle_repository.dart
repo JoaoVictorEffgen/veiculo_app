@@ -405,6 +405,24 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   @override
+  Future<String?> replyToDriverIssueReport(AppUser admin, String reportId, String reply) async {
+    if (admin.role != UserRole.admin) return 'Somente administradores podem responder relatos.';
+    final trimmed = reply.trim();
+    if (trimmed.isEmpty) return 'Escreva uma resposta antes de enviar.';
+
+    try {
+      await _firestore.collection(FirestorePaths.driverReports).doc(reportId).update({
+        'adminReply': trimmed,
+        'repliedAt': FieldValue.serverTimestamp(),
+        'repliedByName': admin.name,
+      });
+      return null;
+    } on FirebaseException catch (error) {
+      return error.message ?? 'Erro ao enviar resposta.';
+    }
+  }
+
+  @override
   Future<void> saveFcmToken(AppUser user, String token) async {
     try {
       await _firestore.collection(FirestorePaths.users).doc(user.id).set(
@@ -1216,6 +1234,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
       message: data['message'] as String? ?? '',
       vehicleId: data['vehicleId'] as String?,
       vehicleName: data['vehicleName'] as String?,
+      adminReply: data['adminReply'] as String?,
+      repliedAt: (data['repliedAt'] as Timestamp?)?.toDate(),
+      repliedByName: data['repliedByName'] as String?,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }

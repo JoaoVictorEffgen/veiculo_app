@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../../app/theme.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/corporate_ui.dart';
+import '../../../../core/widgets/fleet_period_filter.dart';
 import '../../../../core/widgets/fleet_announcement_banner.dart';
 import '../../../../core/widgets/admin_only_gate.dart';
 import '../../../../core/widgets/main_app_shell.dart';
@@ -53,7 +54,10 @@ class _DashboardBody extends ConsumerWidget {
           const SizedBox(height: 16),
           const FleetAnnouncementBanner(),
           const SizedBox(height: 8),
-          _PeriodFilter(),
+          FleetPeriodFilter(
+            period: ref.watch(fleetPeriodProvider),
+            onChanged: (value) => ref.read(fleetPeriodProvider.notifier).state = value,
+          ),
           const SizedBox(height: 12),
           _ExportActions(report: report),
           const SizedBox(height: 20),
@@ -143,60 +147,6 @@ class _DashboardBody extends ConsumerWidget {
             child: _VehicleUsageDonutChart(data: report.utilizationByVehicle),
           ),
           const _ChartGuideCard(),
-        ],
-      ),
-    );
-  }
-}
-
-class _PeriodFilter extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final period = ref.watch(fleetPeriodProvider);
-
-    return CorporateSurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Filtro de periodo', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<FleetPeriodPreset>(
-            initialValue: period.preset,
-            decoration: const InputDecoration(labelText: 'Periodo', prefixIcon: Icon(Icons.date_range)),
-            items: FleetPeriodPreset.values
-                .map((preset) => DropdownMenuItem(value: preset, child: Text(preset.label)))
-                .toList(),
-            onChanged: (preset) {
-              if (preset == null) return;
-              ref.read(fleetPeriodProvider.notifier).state = period.copyWith(preset: preset);
-            },
-          ),
-          if (period.preset == FleetPeriodPreset.custom) ...[
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final range = await showDateRangePicker(
-                  context: context,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now(),
-                  initialDateRange: DateTimeRange(
-                    start: period.customStart ?? DateTime.now().subtract(const Duration(days: 29)),
-                    end: period.customEnd ?? DateTime.now(),
-                  ),
-                );
-                if (range == null) return;
-                ref.read(fleetPeriodProvider.notifier).state = period.copyWith(
-                      preset: FleetPeriodPreset.custom,
-                      customStart: range.start,
-                      customEnd: range.end,
-                    );
-              },
-              icon: const Icon(Icons.edit_calendar),
-              label: Text(
-                '${formatDateTime(period.customStart ?? period.resolveRange().start)} - ${formatDateTime(period.customEnd ?? period.resolveRange().end)}',
-              ),
-            ),
-          ],
         ],
       ),
     );

@@ -92,6 +92,19 @@ class FleetReportExportService {
     for (final item in report.kmByVehicle.where((item) => item.km > 0)) {
       row([item.name, item.km.toStringAsFixed(1)]);
     }
+    buffer.writeln();
+
+    row(['Relatos de motoristas no periodo']);
+    row(['Motorista', 'Veiculo', 'Data', 'Relato', 'Resposta admin']);
+    for (final item in report.driverReportsInPeriod) {
+      row([
+        item.driverName,
+        item.vehicleName ?? '-',
+        formatDateTime(item.createdAt),
+        item.message,
+        item.adminReply ?? '-',
+      ]);
+    }
 
     return buffer.toString();
   }
@@ -157,6 +170,23 @@ class FleetReportExportService {
                     DateFormat('dd/MM HH:mm').format(item.hourStart),
                     item.km.toStringAsFixed(1),
                     item.avgSpeedKmh.toStringAsFixed(1),
+                  ],
+                )
+                .toList(),
+          ),
+          pw.SizedBox(height: 16),
+          _pdfSectionTitle('Relatos de motoristas'),
+          _pdfTable(
+            headers: const ['Motorista', 'Veiculo', 'Data', 'Relato', 'Resposta'],
+            rows: report.driverReportsInPeriod
+                .take(25)
+                .map(
+                  (item) => [
+                    item.driverName,
+                    item.vehicleName ?? '-',
+                    DateFormat('dd/MM/yyyy HH:mm').format(item.createdAt),
+                    item.message,
+                    item.adminReply ?? '-',
                   ],
                 )
                 .toList(),

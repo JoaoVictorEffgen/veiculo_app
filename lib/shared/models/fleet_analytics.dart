@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_models.dart';
+
 enum FleetPeriodPreset {
   today('Hoje'),
   last7Days('Ultimos 7 dias'),
@@ -158,6 +160,7 @@ class FleetAnalyticsReport {
     required this.avgSpeedByDriver,
     required this.tripSpeedRecords,
     required this.hourlySpeedByDriver,
+    required this.driverReportsInPeriod,
     required this.topVehicle,
     required this.topDriver,
     required this.topDriverByKm,
@@ -176,6 +179,7 @@ class FleetAnalyticsReport {
   final List<NamedSpeed> avgSpeedByDriver;
   final List<TripSpeedRecord> tripSpeedRecords;
   final List<DriverHourlySpeed> hourlySpeedByDriver;
+  final List<DriverIssueReport> driverReportsInPeriod;
   final NamedCount? topVehicle;
   final NamedDuration? topDriver;
   final NamedKm? topDriverByKm;

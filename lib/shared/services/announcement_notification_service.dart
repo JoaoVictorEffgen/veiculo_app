@@ -17,11 +17,15 @@ class AnnouncementNotificationService {
 
   StreamSubscription<List<FleetAnnouncement>>? _subscription;
   StreamSubscription<List<FleetAdminAlert>>? _alertsSubscription;
+  StreamSubscription<List<DriverIssueReport>>? _reportsSubscription;
   final Map<String, AnnouncementResponseStatus?> _knownResponses = {};
   final Set<String> _knownAlertIds = {};
+  final Set<String> _knownReportIds = {};
+  final Map<String, bool> _knownReportReplies = {};
   bool _initialized = false;
   bool _seeded = false;
   bool _alertsSeeded = false;
+  bool _reportsSeeded = false;
   AppUser? _activeUser;
 
   static const _channelId = 'fleet_announcements';
@@ -55,13 +59,18 @@ class AnnouncementNotificationService {
   Future<void> bindUser(AppUser? user) async {
     await _subscription?.cancel();
     await _alertsSubscription?.cancel();
+    await _reportsSubscription?.cancel();
     _subscription = null;
     _alertsSubscription = null;
+    _reportsSubscription = null;
     _activeUser = user;
     _knownResponses.clear();
     _knownAlertIds.clear();
+    _knownReportIds.clear();
+    _knownReportReplies.clear();
     _seeded = false;
     _alertsSeeded = false;
+    _reportsSeeded = false;
 
     if (user == null) return;
 
@@ -88,6 +97,62 @@ class AnnouncementNotificationService {
       _alertsSubscription = _repository.watchAdminAlerts().listen((alerts) {
         _handleAdminAlerts(alerts);
       });
+      _reportsSubscription = _repository.watchDriverIssueReports(user).listen((reports) {
+        _handleDriverReportsForAdmin(reports);
+      });
+    }
+
+    if (user.role == UserRole.driver) {
+      _reportsSubscription = _repository.watchDriverIssueReports(user).listen((reports) {
+        _handleDriverReportsForDriver(reports);
+      });
+    }
+  }
+
+  void _handleDriverReportsForAdmin(List<DriverIssueReport> reports) {
+    if (!_reportsSeeded) {
+      for (final report in reports) {
+        _knownReportIds.add(report.id);
+      }
+      _reportsSeeded = true;
+      return;
+    }
+
+    for (final report in reports) {
+      if (_knownReportIds.contains(report.id)) continue;
+      _knownReportIds.add(report.id);
+
+      final vehicleLabel = report.vehicleName == null ? '' : ' • ${report.vehicleName}';
+      unawaited(_showNotification(
+        title: 'Novo relato de problema',
+        body: '${report.driverName}$vehicleLabel: ${report.message}',
+        id: report.id.hashCode,
+      ));
+    }
+  }
+
+  void _handleDriverReportsForDriver(List<DriverIssueReport> reports) {
+    if (!_reportsSeeded) {
+      for (final report in reports) {
+        _knownReportIds.add(report.id);
+        _knownReportReplies[report.id] = report.hasAdminReply;
+      }
+      _reportsSeeded = true;
+      return;
+    }
+
+    for (final report in reports) {
+      _knownReportIds.add(report.id);
+      final hadReply = _knownReportReplies[report.id] ?? false;
+      _knownReportReplies[report.id] = report.hasAdminReply;
+
+      if (!hadReply && report.hasAdminReply) {
+        unawaited(_showNotification(
+          title: 'Resposta ao seu relato',
+          body: report.adminReply!,
+          id: '${report.id}_reply'.hashCode,
+        ));
+      }
     }
   }
 
@@ -206,12 +271,17 @@ class AnnouncementNotificationService {
   Future<void> dispose() async {
     await _subscription?.cancel();
     await _alertsSubscription?.cancel();
+    await _reportsSubscription?.cancel();
     _subscription = null;
     _alertsSubscription = null;
+    _reportsSubscription = null;
     _activeUser = null;
     _knownResponses.clear();
     _knownAlertIds.clear();
+    _knownReportIds.clear();
+    _knownReportReplies.clear();
     _seeded = false;
     _alertsSeeded = false;
+    _reportsSeeded = false;
   }
 }

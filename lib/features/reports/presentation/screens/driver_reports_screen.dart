@@ -169,6 +169,40 @@ class _DriverReportsScreenState extends ConsumerState<DriverReportsScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(report.message, style: const TextStyle(height: 1.35)),
+                            if (report.hasAdminReply) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: AppColors.statusMovingBg,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppColors.statusMoving.withValues(alpha: 0.3)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Resposta da administracao • ${report.repliedByName ?? 'Admin'}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(report.adminReply!, style: const TextStyle(fontSize: 13, height: 1.35)),
+                                    if (report.repliedAt != null) ...[
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        formatDateTime(report.repliedAt!),
+                                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),

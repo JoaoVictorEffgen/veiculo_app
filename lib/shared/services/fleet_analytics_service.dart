@@ -9,6 +9,7 @@ class FleetAnalyticsService {
     required List<Vehicle> vehicles,
     required List<AppUser> drivers,
     required List<FleetAdminAlert> taskAlerts,
+    required List<DriverIssueReport> driverReports,
     required FleetPeriodSelection periodSelection,
     DateTime? now,
   }) {
@@ -19,6 +20,7 @@ class FleetAnalyticsService {
       if (alert.responseStatus != AnnouncementResponseStatus.completed) return false;
       return _inRange(alert.createdAt, period);
     }).toList();
+    final reportsInPeriod = driverReports.where((report) => _inRange(report.createdAt, period)).toList();
 
     final utilizationByVehicle = _utilizationByVehicle(inPeriod, vehicles);
     final movingTimeByDriver = _movingTimeByDriver(movements, drivers, period, current);
@@ -70,6 +72,7 @@ class FleetAnalyticsService {
       avgSpeedByDriver: avgSpeedByDriver,
       tripSpeedRecords: tripSpeedRecords,
       hourlySpeedByDriver: hourlySpeedByDriver,
+      driverReportsInPeriod: reportsInPeriod,
       topVehicle: topVehicle,
       topDriver: topDriver,
       topDriverByKm: topDriverByKm,

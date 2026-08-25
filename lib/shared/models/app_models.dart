@@ -259,6 +259,9 @@ class DriverIssueReport {
     required this.createdAt,
     this.vehicleId,
     this.vehicleName,
+    this.adminReply,
+    this.repliedAt,
+    this.repliedByName,
   });
 
   final String id;
@@ -268,6 +271,11 @@ class DriverIssueReport {
   final DateTime createdAt;
   final String? vehicleId;
   final String? vehicleName;
+  final String? adminReply;
+  final DateTime? repliedAt;
+  final String? repliedByName;
+
+  bool get hasAdminReply => adminReply != null && adminReply!.trim().isNotEmpty;
 }
 
 enum MaintenanceAlertKind { kmDue, dateDue }
