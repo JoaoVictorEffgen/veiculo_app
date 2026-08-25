@@ -22,10 +22,7 @@ const seedVehicles = [
   { id: 'vehicle-1', name: 'Strada 01', model: 'Fiat Strada', plate: 'ABC-1D23', status: 'stopped', stoppedLocation: 'Garagem da empresa' },
   { id: 'vehicle-2', name: 'Toro 01', model: 'Fiat Toro', plate: 'DEF-4G56', status: 'stopped', stoppedLocation: 'Garagem da empresa' },
   { id: 'vehicle-3', name: 'Hilux', model: 'Toyota Hilux', plate: 'GHI-7J89', status: 'stopped', stoppedLocation: 'Garagem da empresa' },
-  { id: 'vehicle-4', name: 'Saveiro', model: 'VW Saveiro', plate: 'JKL-0M12', status: 'stopped', stoppedLocation: 'Garagem da empresa' },
-  { id: 'vehicle-5', name: 'Ranger', model: 'Ford Ranger', plate: 'MNO-3P45', status: 'stopped', stoppedLocation: 'Garagem da empresa' },
-  { id: 'vehicle-6', name: 'Master', model: 'Renault Master', plate: 'PQR-6S78', status: 'stopped', stoppedLocation: 'Garagem da empresa' },
-  { id: 'vehicle-7', name: 'Fiorino', model: 'Fiat Fiorino', plate: 'STU-9V01', status: 'stopped', stoppedLocation: 'Garagem da empresa' },
+  { id: 'vehicle-4', name: 'Fiorino', model: 'Fiat Fiorino', plate: 'STU-9V01', status: 'stopped', stoppedLocation: 'Garagem da empresa' },
 ];
 
 const topCollections = [

@@ -46,6 +46,13 @@ class FirebaseVehicleRepository implements VehicleRepository {
       }
 
       final loaded = await _loadAppUser(firebaseUser.uid);
+      if (loaded == null) {
+        await ensureSeedData();
+        _cachedUser = await _loadAppUser(firebaseUser.uid);
+        yield _cachedUser;
+        continue;
+      }
+
       _cachedUser = loaded;
       yield loaded;
     }
@@ -58,6 +65,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         email: email.trim().toLowerCase(),
         password: password,
       );
+      await ensureSeedData();
       _cachedUser = await _loadAppUser(credential.user!.uid);
       if (_cachedUser == null) return 'Usuario sem cadastro no sistema.';
       return null;
@@ -968,32 +976,19 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<void> ensureSeedData() async {
-    if (_auth.currentUser != null) return;
-
     final secondaryApp = await _createSecondaryApp();
     try {
       final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
       final secondaryFirestore = FirebaseFirestore.instanceFor(app: secondaryApp);
 
-      var adminReady = false;
-      try {
-        await secondaryAuth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
-        adminReady = true;
-      } on FirebaseAuthException {
-        for (final seed in _seedUsers) {
-          await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
-        }
-        await secondaryAuth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
-        adminReady = true;
-      }
+      final adminSeed = _seedUsers.firstWhere((seed) => seed.role == UserRole.admin);
+      await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, adminSeed);
 
-      if (!adminReady) return;
+      await secondaryAuth.signInWithEmailAndPassword(email: adminSeed.email, password: adminSeed.password);
 
       for (final seed in _seedUsers) {
         await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
       }
-
-      await secondaryAuth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
 
       final marker = await secondaryFirestore.collection(FirestorePaths.vehicles).doc('vehicle-1').get();
       if (!marker.exists) {
@@ -1040,7 +1035,18 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final ref = secondaryFirestore.collection(FirestorePaths.users).doc(uid);
     if ((await ref.get()).exists) return;
 
-    await secondaryAuth.signInWithEmailAndPassword(email: 'admin@empresa.com', password: '123456');
+    if (seed.role == UserRole.admin) {
+      await secondaryAuth.signInWithEmailAndPassword(email: seed.email, password: seed.password);
+      await ref.set({
+        'name': seed.name,
+        'email': seed.email,
+        'role': seed.role.name,
+      });
+      return;
+    }
+
+    final adminSeed = _seedUsers.firstWhere((item) => item.role == UserRole.admin);
+    await secondaryAuth.signInWithEmailAndPassword(email: adminSeed.email, password: adminSeed.password);
     await ref.set({
       'name': seed.name,
       'email': seed.email,
@@ -1261,16 +1267,4 @@ class FirebaseVehicleRepository implements VehicleRepository {
     return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
-  String _authErrorMessage(FirebaseAuthException error) {
-    switch (error.code) {
-      case 'user-not-found':
-      case 'wrong-password':
-      case 'invalid-credential':
-        return 'E-mail ou senha invalidos.';
-      case 'email-already-in-use':
-        return 'Ja existe um usuario com esse e-mail.';
-      default:
-        return error.message ?? 'Erro de autenticacao.';
-    }
-  }
-}
+  String _authErrorMessage(
