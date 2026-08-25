@@ -230,7 +230,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? AppColors.primary : AppColors.navInactive;
+    final color = selected ? AppColors.accent : AppColors.navInactive;
     return Expanded(
       child: InkWell(
         onTap: onTap,

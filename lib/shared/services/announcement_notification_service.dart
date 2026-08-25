@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../../app/theme.dart';
 import '../models/app_models.dart';
 import 'vehicle_repository.dart';
 
@@ -192,7 +193,7 @@ class AnnouncementNotificationService {
     final body = message.notification?.body ?? message.data['message'];
     if (body == null || body.isEmpty) return;
     unawaited(_showNotification(
-      title: message.notification?.title ?? 'Controle de Veiculos',
+      title: message.notification?.title ?? AppBranding.appName,
       body: body,
       id: message.hashCode,
     ));

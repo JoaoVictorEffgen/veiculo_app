@@ -106,7 +106,7 @@ class CorporateMetricTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color ?? AppColors.primary, size: 20),
+          Icon(icon, color: color ?? AppColors.accent, size: 20),
           const SizedBox(height: 10),
           Text(value, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
           Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
@@ -141,18 +141,24 @@ class CorporateSplash extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.12),
-                shape: BoxShape.circle,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Image.asset(
+                'assets/icon/app_icon.png',
+                width: 96,
+                height: 96,
+                fit: BoxFit.cover,
               ),
-              child: const Icon(Icons.local_shipping_rounded, size: 64, color: Colors.white),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Controle de Veiculos',
-              style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+            RichText(
+              text: const TextSpan(
+                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700),
+                children: [
+                  TextSpan(text: 'DRIVE '),
+                  TextSpan(text: 'CONTROL', style: TextStyle(color: AppColors.accent)),
+                ],
+              ),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -163,7 +169,7 @@ class CorporateSplash extends StatelessWidget {
             const SizedBox(
               width: 28,
               height: 28,
-              child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.accent),
             ),
           ],
         ),

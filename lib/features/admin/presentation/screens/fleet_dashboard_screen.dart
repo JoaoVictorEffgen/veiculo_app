@@ -62,7 +62,7 @@ class _DashboardBody extends ConsumerWidget {
                   label: 'Total da frota',
                   value: '${report.totalKm.toStringAsFixed(1)} km',
                   icon: Icons.speed_outlined,
-                  color: AppColors.primary,
+                  color: AppColors.accent,
                 ),
               ),
               const SizedBox(width: 8),
@@ -467,12 +467,12 @@ class _DailyKmLineChart extends StatelessWidget {
             LineChartBarData(
               spots: spots,
               isCurved: true,
-              color: AppColors.statusMoving,
+              color: AppColors.accent,
               barWidth: 3,
               dotData: FlDotData(show: data.length <= 14),
               belowBarData: BarAreaData(
                 show: true,
-                color: AppColors.statusMovingBg.withValues(alpha: 0.7),
+                color: AppColors.accentSoft.withValues(alpha: 0.85),
               ),
             ),
           ],
@@ -488,6 +488,7 @@ class _VehicleUsageDonutChart extends StatelessWidget {
   final List<NamedCount> data;
 
   static const _palette = [
+    AppColors.accent,
     AppColors.primary,
     AppColors.statusMoving,
     Color(0xFF4B6FA8),
@@ -582,7 +583,7 @@ class _GuideRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: AppColors.primary),
+          Icon(icon, size: 18, color: AppColors.accent),
           const SizedBox(width: 10),
           Expanded(
             child: RichText(

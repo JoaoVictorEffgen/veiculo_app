@@ -15,7 +15,7 @@ class VehicleControlApp extends ConsumerWidget {
     return AnnouncementNotificationBinder(
       child: LocationTrackingBinder(
         child: MaterialApp.router(
-          title: 'Controle de Veículos',
+          title: AppBranding.appName,
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light,
           routerConfig: router,

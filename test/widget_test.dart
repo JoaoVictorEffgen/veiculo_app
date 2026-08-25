@@ -31,7 +31,8 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(seconds: 2));
 
-    expect(find.text('Controle de Veiculos'), findsOneWidget);
+    expect(find.text('DRIVE '), findsOneWidget);
+    expect(find.text('CONTROL'), findsOneWidget);
     expect(find.text('Entrar'), findsOneWidget);
   });
 }

@@ -95,7 +95,7 @@ class VehicleChecklistPdfService {
           ],
           pw.SizedBox(height: 32),
           pw.Text(
-            'Documento gerado pelo Controle de Veiculos.',
+            'Documento gerado pelo Drive Control.',
             style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
           ),
         ],

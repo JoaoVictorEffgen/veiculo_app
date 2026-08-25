@@ -1,7 +1,7 @@
 name: vehicle_control_app
-description: "Aplicativo interno de controle de veículos e motoristas."
+description: "Drive Control — controle inteligente de veículos e motoristas."
 publish_to: 'none'
-version: 0.3.20
+version: 0.3.21
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -61,7 +61,7 @@ flutter_launcher_icons:
   android: true
   ios: false
   image_path: assets/icon/app_icon.png
-  adaptive_icon_background: "#1B3155"
+  adaptive_icon_background: "#101828"
   adaptive_icon_foreground: assets/icon/app_icon.png
 
 flutter:

@@ -16,7 +16,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  static const _linkColor = Color(0xFF2563EB);
+  static const _linkColor = AppColors.accent;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -299,7 +299,7 @@ class _LoginHeroHeader extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [AppColors.primaryDark, AppColors.primary, Color(0xFF243B63)],
+                  colors: [AppColors.primaryDark, AppColors.primary, Color(0xFF1A233E)],
                 ),
               ),
             ),
@@ -328,25 +328,30 @@ class _LoginHeroHeader extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const _TruckBadge(),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Image.asset(
+                        'assets/icon/app_icon.png',
+                        width: 88,
+                        height: 88,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                     const SizedBox(height: 18),
                     RichText(
                       textAlign: TextAlign.center,
                       text: const TextSpan(
-                        style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w700, height: 1.2),
+                        style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w800, height: 1.15, fontStyle: FontStyle.italic),
                         children: [
-                          TextSpan(text: 'Controle de '),
-                          TextSpan(
-                            text: 'Veiculos',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
+                          TextSpan(text: 'DRIVE '),
+                          TextSpan(text: 'CONTROL', style: TextStyle(color: AppColors.accent)),
                         ],
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Gestao corporativa da frota',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 15),
+                      AppBranding.tagline.toUpperCase(),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 12, letterSpacing: 1.1),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -355,42 +360,6 @@ class _LoginHeroHeader extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _TruckBadge extends StatelessWidget {
-  const _TruckBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 72,
-      width: 120,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned(
-            left: 8,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                3,
-                (index) => Container(
-                  margin: const EdgeInsets.symmetric(vertical: 3),
-                  width: 22 - (index * 4.0),
-                  height: 3,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.55 - (index * 0.12)),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const Icon(Icons.local_shipping_rounded, size: 58, color: Colors.white),
-        ],
       ),
     );
   }
