@@ -30,6 +30,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void initState() {
     super.initState();
     unawaited(_loadSavedCredentials());
+    unawaited(_prepareTestAccounts());
+  }
+
+  Future<void> _prepareTestAccounts() async {
+    await ref.read(repositoryProvider).ensureSeedData();
   }
 
   Future<void> _loadSavedCredentials() async {
