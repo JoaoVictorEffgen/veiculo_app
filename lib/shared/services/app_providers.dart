@@ -12,7 +12,6 @@ import 'fleet_report_export_service.dart';
 import 'maintenance_alert_service.dart';
 import 'location_tracking_service.dart';
 import 'login_preferences_service.dart';
-import 'trip_start_voice_service.dart';
 import 'vehicle_repository.dart';
 
 final repositoryProvider = Provider<VehicleRepository>((ref) {
@@ -25,14 +24,9 @@ final locationTrackingServiceProvider = Provider<LocationTrackingService>((ref) 
   throw UnimplementedError('locationTrackingServiceProvider must be overridden in main.dart');
 });
 
-final tripStartVoiceServiceProvider = Provider<TripStartVoiceService>((ref) {
-  final service = TripStartVoiceService();
-  ref.onDispose(service.dispose);
-  return service;
-});
-
 class AuthController extends StateNotifier<AuthSession> {
   AuthController(this._repository) : super(const AuthSession.loading()) {
+    unawaited(_restoreSession());
     _subscription = _repository.authStateChanges.listen(
       (user) {
         _bootstrapTimer?.cancel();
@@ -43,7 +37,7 @@ class AuthController extends StateNotifier<AuthSession> {
         state = AuthSession.ready(_repository.currentUser);
       },
     );
-    _bootstrapTimer = Timer(const Duration(seconds: 8), () {
+    _bootstrapTimer = Timer(const Duration(seconds: 4), () {
       if (!state.isReady) {
         debugPrint('Timeout de autenticacao — liberando app com sessao em cache.');
         state = AuthSession.ready(_repository.currentUser);
@@ -57,11 +51,34 @@ class AuthController extends StateNotifier<AuthSession> {
 
   AppUser? get user => state.user;
 
-  Future<String?> login(String email, String password) => _repository.login(email, password);
+  Future<void> _restoreSession() async {
+    try {
+      final user = await _repository.restorePersistedSession().timeout(const Duration(seconds: 5));
+      if (user != null) {
+        state = AuthSession.ready(user);
+      }
+    } on TimeoutException {
+      debugPrint('Restaurar sessao: tempo esgotado.');
+      if (_repository.currentUser != null) {
+        state = AuthSession.ready(_repository.currentUser);
+      }
+    }
+  }
+
+  Future<String?> login(String email, String password) async {
+    debugPrint('AuthController.login: iniciando');
+    final error = await _repository.login(email, password);
+    debugPrint('AuthController.login: concluido (erro=${error != null})');
+    state = AuthSession.ready(_repository.currentUser);
+    return error;
+  }
 
   Future<String?> sendPasswordResetEmail(String email) => _repository.sendPasswordResetEmail(email);
 
-  Future<void> logout() => _repository.logout();
+  Future<void> logout() async {
+    await _repository.logout();
+    state = const AuthSession.ready(null);
+  }
 
   @override
   void dispose() {
@@ -269,12 +286,10 @@ final adminControllerProvider = StateNotifierProvider<AdminController, int>((ref
 });
 
 final movementsProvider = StreamProvider<List<Movement>>((ref) {
-  ref.watch(adminControllerProvider);
   return ref.watch(repositoryProvider).watchMovements();
 });
 
 final usersProvider = StreamProvider<List<AppUser>>((ref) {
-  ref.watch(adminControllerProvider);
   return ref.watch(repositoryProvider).watchUsers();
 });
 
@@ -282,69 +297,19 @@ final rawDriverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
   return ref.watch(repositoryProvider).watchDriverTracks();
 });
 
-final driverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
-  final repo = ref.watch(repositoryProvider);
-  return _activeDriverTracksStream(repo);
+final driverTracksProvider = Provider<AsyncValue<List<DriverTrack>>>((ref) {
+  final tracksAsync = ref.watch(rawDriverTracksProvider);
+  final vehicles = ref.watch(vehicleControllerProvider);
+  return tracksAsync.when(
+    data: (tracks) => AsyncValue.data(DriverTrackFilter.forMapDisplay(tracks, vehicles)),
+    loading: () => const AsyncValue.loading(),
+    error: (error, stackTrace) => AsyncValue.error(error, stackTrace),
+  );
 });
-
-Stream<List<DriverTrack>> _activeDriverTracksStream(VehicleRepository repo) {
-  final controller = StreamController<List<DriverTrack>>();
-  var tracks = const <DriverTrack>[];
-  var vehicles = const <Vehicle>[];
-  var tracksReady = false;
-  var vehiclesReady = false;
-
-  void publish() {
-    if (!controller.isClosed && (tracksReady || vehiclesReady)) {
-      controller.add(DriverTrackFilter.activeOnly(tracks, vehicles));
-    }
-  }
-
-  late final StreamSubscription<List<DriverTrack>> tracksSub;
-  late final StreamSubscription<List<Vehicle>> vehiclesSub;
-
-  controller.add(const []);
-
-  tracksSub = repo.watchDriverTracks().listen(
-        (value) {
-          tracks = value;
-          tracksReady = true;
-          publish();
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          debugPrint('Erro no stream de rastreamento: $error');
-          tracks = const [];
-          tracksReady = true;
-          publish();
-        },
-      );
-
-  vehiclesSub = repo.watchVehicles().listen(
-        (value) {
-          vehicles = value;
-          vehiclesReady = true;
-          publish();
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          debugPrint('Erro no stream de veiculos (GPS): $error');
-          vehicles = const [];
-          vehiclesReady = true;
-          publish();
-        },
-      );
-
-  controller.onCancel = () async {
-    await tracksSub.cancel();
-    await vehiclesSub.cancel();
-  };
-
-  return controller.stream;
-}
 
 final fleetAnnouncementsProvider = StreamProvider<List<FleetAnnouncement>>((ref) {
   final user = ref.watch(authControllerProvider).user;
   if (user == null) return Stream.value(const []);
-  ref.watch(adminControllerProvider);
   return ref.watch(repositoryProvider).watchAnnouncementsForUser(user);
 });
 
@@ -416,7 +381,6 @@ final maintenanceAlertsProvider = Provider<List<MaintenanceAlert>>((ref) {
 });
 
 final maintenanceLogsProvider = StreamProvider.family<List<MaintenanceLog>, String>((ref, vehicleId) {
-  ref.watch(adminControllerProvider);
   return ref.watch(repositoryProvider).watchMaintenanceLogs(vehicleId);
 });
 
@@ -433,9 +397,6 @@ final fleetAnalyticsProvider = Provider<AsyncValue<FleetAnalyticsReport>>((ref) 
   final adminAlertsAsync = ref.watch(adminAlertsProvider);
   final driverReportsAsync = ref.watch(driverIssueReportsProvider);
 
-  if (movementsAsync.isLoading || usersAsync.isLoading || adminAlertsAsync.isLoading || driverReportsAsync.isLoading) {
-    return const AsyncValue.loading();
-  }
   if (movementsAsync.hasError) {
     return AsyncValue.error(movementsAsync.error!, movementsAsync.stackTrace ?? StackTrace.empty);
   }

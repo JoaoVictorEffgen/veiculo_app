@@ -57,7 +57,7 @@ String? resolveRedirect(GoRouterState state, AuthSession session) {
 
   if (location == AppRoutes.splash) {
     if (user == null) return AppRoutes.login;
-    return AppRoutes.dashboard;
+    return user.role == UserRole.admin ? AppRoutes.fleetDashboard : AppRoutes.dashboard;
   }
 
   if (user == null && location != AppRoutes.login) {
@@ -65,7 +65,7 @@ String? resolveRedirect(GoRouterState state, AuthSession session) {
   }
 
   if (user != null && location == AppRoutes.login) {
-    return AppRoutes.dashboard;
+    return user.role == UserRole.admin ? AppRoutes.fleetDashboard : AppRoutes.dashboard;
   }
 
   if (location == AppRoutes.admin && user?.role != UserRole.admin) {

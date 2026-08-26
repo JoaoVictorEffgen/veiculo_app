@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vehicle_control_app/shared/services/app_providers.dart';
@@ -13,6 +15,8 @@ class LocationTrackingBinder extends ConsumerStatefulWidget {
 }
 
 class _LocationTrackingBinderState extends ConsumerState<LocationTrackingBinder> with WidgetsBindingObserver {
+  var _syncing = false;
+
   @override
   void initState() {
     super.initState();
@@ -23,16 +27,22 @@ class _LocationTrackingBinderState extends ConsumerState<LocationTrackingBinder>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(ref.read(locationTrackingServiceProvider).pauseLocalTracking());
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden) {
-      _sync();
+    if (!mounted) return;
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _sync();
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        break;
     }
   }
 
@@ -44,13 +54,19 @@ class _LocationTrackingBinderState extends ConsumerState<LocationTrackingBinder>
   }
 
   Future<void> _sync() async {
-    final session = ref.read(authControllerProvider);
-    if (!session.isReady) return;
+    if (!mounted || _syncing) return;
+    _syncing = true;
+    try {
+      final session = ref.read(authControllerProvider);
+      if (!session.isReady) return;
 
-    await ref.read(locationTrackingServiceProvider).syncTracking(
-          user: session.user,
-          vehicles: ref.read(vehicleControllerProvider),
-          vehiclesLoaded: ref.read(vehicleControllerProvider.notifier).hasLoaded,
-        );
+      await ref.read(locationTrackingServiceProvider).syncTracking(
+            user: session.user,
+            vehicles: ref.read(vehicleControllerProvider),
+            vehiclesLoaded: ref.read(vehicleControllerProvider.notifier).hasLoaded,
+          );
+    } finally {
+      _syncing = false;
+    }
   }
 }

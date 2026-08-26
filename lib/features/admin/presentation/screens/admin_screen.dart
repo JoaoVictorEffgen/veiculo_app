@@ -277,7 +277,15 @@ class AdminScreen extends ConsumerWidget {
     final values = await _driverForm(context, title: 'Adicionar motorista');
     if (values == null || !context.mounted) return;
     final error = await ref.read(adminControllerProvider.notifier).addDriver(admin, name: values[0], email: values[1], password: values[2]);
-    if (error != null && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    if (!context.mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    ref.invalidate(usersProvider);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Motorista cadastrado com sucesso.')),
+    );
   }
 
   Future<void> _editDriver(BuildContext context, WidgetRef ref, AppUser admin, AppUser driver) async {
@@ -296,7 +304,15 @@ class AdminScreen extends ConsumerWidget {
           email: values[1],
           password: values[2].isEmpty ? null : values[2],
         );
-    if (error != null && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    if (!context.mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    ref.invalidate(usersProvider);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Motorista atualizado com sucesso.')),
+    );
   }
 
   Future<void> _deleteDriver(BuildContext context, WidgetRef ref, AppUser admin, AppUser driver) async {

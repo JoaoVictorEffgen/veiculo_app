@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/router.dart';
 import '../../../../app/theme.dart';
+import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -30,11 +31,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void initState() {
     super.initState();
     unawaited(_loadSavedCredentials());
-    unawaited(_prepareTestAccounts());
-  }
-
-  Future<void> _prepareTestAccounts() async {
-    await ref.read(repositoryProvider).ensureSeedData();
   }
 
   Future<void> _loadSavedCredentials() async {
@@ -60,20 +56,47 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     setState(() => _loading = true);
     final email = _emailController.text.trim();
-    final error = await ref.read(authControllerProvider.notifier).login(email, _passwordController.text);
-    if (!mounted) return;
+    try {
+      final error = await ref
+          .read(authControllerProvider.notifier)
+          .login(email, _passwordController.text)
+          .timeout(
+            const Duration(seconds: 18),
+            onTimeout: () => 'Tempo esgotado ao entrar. Verifique a conexao e tente novamente.',
+          );
 
-    if (error == null) {
-      await ref.read(loginPreferencesServiceProvider).save(remember: _rememberMe, email: email);
-    }
+      if (!mounted) return;
 
-    setState(() => _loading = false);
-    if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
-      return;
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+        return;
+      }
+
+      unawaited(
+        ref.read(loginPreferencesServiceProvider).save(remember: _rememberMe, email: email),
+      );
+
+      final user = ref.read(authControllerProvider).user;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Login concluido, mas perfil indisponivel. Tente novamente.')),
+        );
+        return;
+      }
+
+      if (user.role == UserRole.admin) {
+        context.go(AppRoutes.fleetDashboard);
+      } else {
+        context.go(AppRoutes.dashboard);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao entrar: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-    if (!mounted) return;
-    context.go(AppRoutes.dashboard);
   }
 
   Future<void> _openForgotPasswordDialog() async {

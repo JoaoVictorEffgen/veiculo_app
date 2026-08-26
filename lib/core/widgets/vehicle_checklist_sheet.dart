@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -118,6 +120,9 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
         return;
       }
 
+      ref.invalidate(driverTodayChecklistsProvider);
+      ref.invalidate(vehicleChecklistsProvider);
+
       final freshDriver = ref.read(authControllerProvider).user ?? widget.driver;
       final saved = VehicleChecklist(
         id: vehicleChecklistDocId(driverId: freshDriver.id, vehicleId: widget.vehicle.id),
@@ -134,8 +139,19 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
         signatureBase64: signatureBase64,
       );
 
-    await _showPdfActions(saved);
-    if (mounted) Navigator.pop(context, saved);
+      if (!mounted) return;
+      final rootContext = Navigator.of(context, rootNavigator: true).context;
+      final messenger = ScaffoldMessenger.of(rootContext);
+      Navigator.pop(context, saved);
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('Checklist registrado com sucesso.'),
+          action: SnackBarAction(
+            label: 'Ver PDF',
+            onPressed: () => unawaited(_showPdfActions(rootContext, saved)),
+          ),
+        ),
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -145,10 +161,10 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
     }
   }
 
-  Future<void> _showPdfActions(VehicleChecklist checklist) async {
+  Future<void> _showPdfActions(BuildContext dialogContext, VehicleChecklist checklist) async {
     final pdfService = VehicleChecklistPdfService();
     await showDialog<void>(
-      context: context,
+      context: dialogContext,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text('Checklist concluido'),
@@ -160,7 +176,7 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              openChecklistPdfViewer(context, checklist);
+              openChecklistPdfViewer(dialogContext, checklist);
             },
             child: const Text('Ver PDF no app'),
           ),

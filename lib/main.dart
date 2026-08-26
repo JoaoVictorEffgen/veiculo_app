@@ -57,8 +57,13 @@ Future<void> main() async {
   );
 
   unawaited(
-    repository.ensureSeedData().timeout(const Duration(seconds: 30)).catchError((Object error) {
-      debugPrint('Seed Firebase: $error');
+    Future<void>.delayed(const Duration(seconds: 8), () async {
+      if (repository.currentUser != null) return;
+      try {
+        await repository.ensureSeedData().timeout(const Duration(seconds: 45));
+      } catch (error) {
+        debugPrint('Seed Firebase: $error');
+      }
     }),
   );
 }

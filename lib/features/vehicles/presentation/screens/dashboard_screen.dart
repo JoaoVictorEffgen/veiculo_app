@@ -291,7 +291,9 @@ class _VehicleCard extends StatelessWidget {
   }
 
   Future<void> _confirmStartWithChecklist(BuildContext context, AppUser operator) async {
-    var todayChecklist = todayChecklistForVehicle(ref, vehicle.id);
+    final repository = ref.read(repositoryProvider);
+    var todayChecklist = await repository.getTodayChecklist(operator, vehicle.id);
+    todayChecklist ??= todayChecklistForVehicle(ref, vehicle.id);
 
     if (todayChecklist == null) {
       final completed = await VehicleChecklistSheet.show(
@@ -342,34 +344,44 @@ class _VehicleCard extends StatelessWidget {
     final canTrack = await trackingService.canStartTripTracking();
     if (!canTrack && context.mounted) {
       final issue = trackingService.permissionIssue ??
-          'Permita localizacao "O tempo todo" e desative economia de bateria para este app.';
-      await showDialog<void>(
+          'Permita localizacao nas configuracoes do aparelho.';
+      final proceed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('GPS necessario para corrida'),
-          content: Text('$issue\n\nSem isso, o rastreamento para se o app for fechado.'),
+          title: const Text('Localizacao recomendada'),
+          content: Text(
+            '$issue\n\n'
+            'Voce pode iniciar mesmo assim, mas o rastreamento ao vivo pode falhar.',
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-            ElevatedButton(
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+            TextButton(
               onPressed: () async {
-                Navigator.pop(context);
+                Navigator.pop(context, false);
                 await trackingService.openPermissionSettings();
               },
               child: const Text('Abrir configuracoes'),
             ),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Iniciar mesmo assim')),
           ],
         ),
       );
-      return;
+      if (proceed != true) return;
     }
 
-    final error = await ref.read(vehicleControllerProvider.notifier).start(vehicle.id, operator);
-    if (error != null && context.mounted) {
+    final error = await runWithBlockingLoadingDialog<String?>(
+      context,
+      message: 'Iniciando corrida...',
+      action: () => ref
+          .read(vehicleControllerProvider.notifier)
+          .start(vehicle.id, operator)
+          .timeout(const Duration(seconds: 20), onTimeout: () => 'Tempo esgotado ao iniciar corrida.'),
+    );
+    if (!context.mounted) return;
+    if (error != null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
-
-    unawaited(ref.read(tripStartVoiceServiceProvider).announceTripStart(operator.name));
   }
 
   Future<void> _stop(BuildContext context) async {
@@ -447,7 +459,6 @@ class _VehicleCard extends StatelessWidget {
     }
 
     await ref.read(locationTrackingServiceProvider).endTripSession();
-    unawaited(ref.read(tripStartVoiceServiceProvider).announceTripStop());
 
     if (context.mounted && distanceKm > 0) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -15,8 +15,9 @@ abstract final class DriverTrackFilter {
           final vehicle = movingByDriver[track.driverId];
           if (vehicle == null || vehicle.id != track.vehicleId) return false;
           final age = now.difference(track.updatedAt);
-          return age <= LocationTrackingConfig.displayMaxAge ||
-              age <= LocationTrackingConfig.displayStaleMaxAge;
+          if (age <= LocationTrackingConfig.displayMaxAge) return true;
+          if (age <= LocationTrackingConfig.displayStaleMaxAge) return true;
+          return age <= const Duration(hours: 6);
         })
         .toList()
       ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));

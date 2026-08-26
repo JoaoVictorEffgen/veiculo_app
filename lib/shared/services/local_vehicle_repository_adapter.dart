@@ -36,6 +36,9 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   }
 
   @override
+  Future<AppUser?> restorePersistedSession() async => _local.currentUser;
+
+  @override
   Future<String?> login(String email, String password) async {
     final user = _local.authenticate(email, password);
     if (user == null) return 'E-mail ou senha invalidos.';

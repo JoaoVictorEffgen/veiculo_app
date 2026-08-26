@@ -147,7 +147,10 @@ class _DriverReportsScreenState extends ConsumerState<DriverReportsScreen> {
           const CorporateSectionTitle(title: 'Meus relatos'),
           const SizedBox(height: 8),
           reportsAsync.when(
-            loading: () => const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+            loading: () => const CorporateEmptyState(
+              icon: Icons.report_outlined,
+              message: 'Voce ainda nao enviou nenhum relato.',
+            ),
             error: (error, _) => CorporateEmptyState(
               icon: Icons.cloud_off_outlined,
               message: error.toString().contains('index')

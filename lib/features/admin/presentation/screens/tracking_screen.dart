@@ -50,9 +50,11 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
 
   Future<void> _purgeStaleTracks() async {
     final now = DateTime.now();
-    if (_lastPurgeAt != null && now.difference(_lastPurgeAt!) < const Duration(seconds: 30)) {
+    if (_lastPurgeAt != null && now.difference(_lastPurgeAt!) < const Duration(minutes: 2)) {
       return;
     }
+
+    if (!ref.read(vehicleControllerProvider.notifier).hasLoaded) return;
 
     final tracks = ref.read(rawDriverTracksProvider).valueOrNull;
     if (tracks == null || tracks.isEmpty) return;
@@ -93,6 +95,8 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
         .where((vehicle) => vehicle.status == VehicleStatus.stopped && vehicle.hasStoppedCoordinates)
         .toList()
       ..sort((a, b) => (b.stoppedAt ?? DateTime.fromMillisecondsSinceEpoch(0)).compareTo(a.stoppedAt ?? DateTime.fromMillisecondsSinceEpoch(0)));
+    final movingVehicles = vehicles.where((vehicle) => vehicle.status == VehicleStatus.moving).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
 
     ref.listen<AsyncValue<List<DriverTrack>>>(rawDriverTracksProvider, (_, __) {
       unawaited(_purgeStaleTracks());
@@ -112,7 +116,13 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(child: Text('Erro ao carregar GPS: $error')),
           data: (tracks) {
-            if (tracks.isEmpty && parkedVehicles.isEmpty) {
+            final trackedDriverIds = tracks.map((track) => track.driverId).toSet();
+            final movingWithoutGps = movingVehicles
+                .where((vehicle) =>
+                    vehicle.currentDriverId != null && !trackedDriverIds.contains(vehicle.currentDriverId))
+                .toList();
+
+            if (tracks.isEmpty && parkedVehicles.isEmpty && movingWithoutGps.isEmpty) {
               return const CorporateEmptyState(
                 icon: Icons.map_outlined,
                 message: 'Nenhum veiculo no mapa no momento.\n\n'
@@ -130,7 +140,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: CorporatePageHeader(
                     title: 'Monitoramento da frota',
-                    subtitle: _buildSubtitle(tracks.length, parkedVehicles.length, staleCount),
+                    subtitle: _buildSubtitle(tracks.length + movingWithoutGps.length, parkedVehicles.length, staleCount),
                   ),
                 ),
                 Padding(
@@ -257,12 +267,33 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     children: [
                       if (tracks.isNotEmpty) ...[
-                        const CorporateSectionTitle(title: 'Em movimento'),
+                        const CorporateSectionTitle(title: 'Em movimento (GPS ao vivo)'),
                         const SizedBox(height: 8),
                         ...tracks.map((track) => Padding(
                               padding: const EdgeInsets.only(bottom: 8),
                               child: _TrackTile(track: track),
                             )),
+                      ],
+                      if (movingWithoutGps.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        const CorporateSectionTitle(title: 'Em movimento (sem GPS ao vivo)'),
+                        const SizedBox(height: 8),
+                        ...movingWithoutGps.map(
+                          (vehicle) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: CorporateSurface(
+                              child: ListTile(
+                                leading: const Icon(Icons.directions_car_filled, color: AppColors.statusMoving),
+                                title: Text(vehicle.name),
+                                subtitle: Text(
+                                  vehicle.currentDriverName == null
+                                      ? 'Motorista nao informado'
+                                      : 'Motorista: ${vehicle.currentDriverName}',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                       if (parkedVehicles.isNotEmpty) ...[
                         const SizedBox(height: 8),

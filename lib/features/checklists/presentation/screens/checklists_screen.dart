@@ -25,7 +25,10 @@ class ChecklistsScreen extends ConsumerWidget {
         showBack: false,
       ),
       body: checklistsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const CorporateEmptyState(
+          icon: Icons.checklist_rtl,
+          message: 'Nenhum checklist registrado ainda.',
+        ),
         error: (error, _) => Center(child: Text('Erro ao carregar checklists: $error')),
         data: (checklists) {
           if (checklists.isEmpty) {

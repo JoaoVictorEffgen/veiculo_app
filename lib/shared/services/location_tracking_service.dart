@@ -12,7 +12,7 @@ import '../models/app_models.dart';
 import 'active_trip_session_service.dart';
 
 abstract final class LocationTrackingConfig {
-  static const updateInterval = Duration(seconds: 5);
+  static const updateInterval = Duration(seconds: 3);
   static const distanceFilterMeters = 0;
   static const staleAfter = Duration(seconds: 20);
   static const displayMaxAge = Duration(minutes: 3);
@@ -109,9 +109,9 @@ class LocationTrackingService {
   }
 
   Future<bool> canStartTripTracking() async {
-    final granted = await ensurePermission(requireBackground: true, blockWithoutAlways: true);
+    final granted = await ensurePermission(requireBackground: true, blockWithoutAlways: false);
     if (!granted) return false;
-    await requestBatteryOptimizationExemption();
+    unawaited(requestBatteryOptimizationExemption());
     return true;
   }
 
