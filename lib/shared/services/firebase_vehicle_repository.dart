@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../core/utils/iterable_extensions.dart';
 import '../../firebase_options.dart';
 import '../firebase/firestore_paths.dart';
 import '../models/app_models.dart';
@@ -25,52 +26,142 @@ class FirebaseVehicleRepository implements VehicleRepository {
   final FirebaseFirestore _firestore;
 
   AppUser? _cachedUser;
+  Future<void>? _seedInFlight;
+  bool _loginInFlight = false;
 
   static const _seedUsers = AppSeedData.users;
   static const _seedVehicles = AppSeedData.vehicles;
 
+  bool get _isAdminSession => _cachedUser?.role == UserRole.admin;
+
   @override
   AppUser? get currentUser => _cachedUser;
 
+  Stream<List<T>> _signedInQueryStream<T>({
+    required String debugLabel,
+    required Stream<List<T>> Function() build,
+  }) {
+    if (_auth.currentUser == null) return Stream.value(const []);
+    return build().transform(
+      StreamTransformer<List<T>, List<T>>.fromHandlers(
+        handleError: (error, stackTrace, sink) {
+          debugPrint('$debugLabel: $error');
+          sink.add(const []);
+        },
+      ),
+    );
+  }
+
   @override
-  Stream<AppUser?> get authStateChanges async* {
-    await for (final firebaseUser in _auth.authStateChanges()) {
+  Stream<AppUser?> get authStateChanges {
+    return _auth.authStateChanges().asyncExpand((firebaseUser) {
       if (firebaseUser == null) {
         _cachedUser = null;
-        yield null;
-        continue;
+        return Stream.value(null);
       }
 
-      if (_cachedUser?.id == firebaseUser.uid) {
-        yield _cachedUser;
+      final email = firebaseUser.email?.trim().toLowerCase() ?? '';
+      final uid = firebaseUser.uid;
+
+      Stream<AppUser?> listenProfile() {
+        return _firestore.collection(FirestorePaths.users).doc(uid).snapshots().map((doc) {
+          if (doc.exists) {
+            _cachedUser = _userFromDoc(doc);
+            return _cachedUser!;
+          }
+          final fallback = _appUserFromSeed(uid, email);
+          if (fallback != null) _cachedUser = fallback;
+          return _cachedUser;
+        }).transform(
+          StreamTransformer<AppUser?, AppUser?>.fromHandlers(
+            handleError: (error, stackTrace, sink) {
+              debugPrint('authStateChanges profile: $error');
+              final fallback = _cachedUser ?? _appUserFromSeed(uid, email);
+              if (fallback != null) sink.add(fallback);
+            },
+          ),
+        );
       }
 
-      final loaded = await _loadAppUser(firebaseUser.uid);
-      if (loaded == null) {
-        await ensureSeedData();
-        _cachedUser = await _loadAppUser(firebaseUser.uid);
-        yield _cachedUser;
-        continue;
+      if (_cachedUser?.id == uid) {
+        return Stream.value(_cachedUser).asyncExpand((_) => listenProfile());
       }
 
-      _cachedUser = loaded;
-      yield loaded;
-    }
+      final seedFallback = _appUserFromSeed(uid, email);
+      if (seedFallback != null) {
+        _cachedUser = seedFallback;
+        return Stream.value(seedFallback).asyncExpand((_) => listenProfile());
+      }
+
+      return listenProfile();
+    });
   }
 
   @override
   Future<String?> login(String email, String password) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    _loginInFlight = true;
     try {
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: email.trim().toLowerCase(),
-        password: password,
-      );
-      await ensureSeedData();
-      _cachedUser = await _loadAppUser(credential.user!.uid);
-      if (_cachedUser == null) return 'Usuario sem cadastro no sistema.';
+      final credential = await _auth
+          .signInWithEmailAndPassword(email: normalizedEmail, password: password)
+          .timeout(const Duration(seconds: 12));
+
+      final profileError = await _resolveUserAfterLogin(credential.user!, normalizedEmail);
+      if (profileError != null) return profileError;
       return null;
     } on FirebaseAuthException catch (error) {
+      if (error.code == 'user-not-found' && _isSeedEmail(normalizedEmail)) {
+        try {
+          await _ensureSeedAuthUser(normalizedEmail).timeout(const Duration(seconds: 12));
+          final credential = await _auth
+              .signInWithEmailAndPassword(email: normalizedEmail, password: password)
+              .timeout(const Duration(seconds: 12));
+          final profileError = await _resolveUserAfterLogin(credential.user!, normalizedEmail);
+          if (profileError != null) return profileError;
+          return null;
+        } on TimeoutException {
+          return 'Tempo esgotado ao entrar. Verifique a conexao e tente novamente.';
+        }
+      }
       return _authErrorMessage(error);
+    } on TimeoutException {
+      return 'Tempo esgotado ao entrar. Verifique a conexao e tente novamente.';
+    } finally {
+      _loginInFlight = false;
+    }
+  }
+
+  Future<String?> _resolveUserAfterLogin(User firebaseUser, String normalizedEmail) async {
+    final uid = firebaseUser.uid;
+
+    if (_isSeedEmail(normalizedEmail)) {
+      _cachedUser = _appUserFromSeed(uid, normalizedEmail);
+      if (_cachedUser != null) return null;
+    }
+
+    try {
+      final profile = await _loadAppUser(uid).timeout(const Duration(seconds: 4));
+      if (profile != null) {
+        _cachedUser = profile;
+      }
+    } on TimeoutException {
+      debugPrint('Login: Firestore lento — usando perfil local.');
+    }
+
+    if (_cachedUser == null) return 'Usuario sem cadastro no sistema.';
+    return null;
+  }
+
+  Future<void> _ensureSeedAuthUser(String normalizedEmail) async {
+    final seed = _seedUsers.where((item) => item.email.trim().toLowerCase() == normalizedEmail).firstOrNull;
+    if (seed == null) return;
+
+    final secondaryApp = await _createSecondaryApp();
+    try {
+      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+      await _ensureAuthUserWithSecondary(secondaryAuth, FirebaseFirestore.instanceFor(app: secondaryApp), seed);
+    } finally {
+      await secondaryApp.delete();
     }
   }
 
@@ -102,12 +193,12 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<Vehicle>> watchVehicles() {
-    return _auth.authStateChanges().asyncExpand((user) {
-      if (user == null) return Stream.value(const <Vehicle>[]);
-      return _firestore.collection(FirestorePaths.vehicles).orderBy('name').snapshots().map(
+    return _signedInQueryStream(
+      debugLabel: 'watchVehicles',
+      build: () => _firestore.collection(FirestorePaths.vehicles).orderBy('name').snapshots().map(
             (snapshot) => snapshot.docs.map(_vehicleFromDoc).toList(),
-          );
-    });
+          ),
+    );
   }
 
   @override
@@ -119,68 +210,62 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<Movement>> watchMovements() {
-    return _auth.authStateChanges().asyncExpand((user) async* {
-      if (user == null) {
-        yield const <Movement>[];
-        return;
-      }
-      final appUser = _cachedUser ?? await _loadAppUser(user.uid);
-      final query = appUser?.role == UserRole.admin
-          ? _firestore.collection(FirestorePaths.movements).orderBy('createdAt', descending: true)
-          : _firestore
-              .collection(FirestorePaths.movements)
-              .where('driverId', isEqualTo: user.uid)
-              .orderBy('createdAt', descending: true);
-      yield* query.snapshots().map((snapshot) => snapshot.docs.map(_movementFromDoc).toList());
-    });
+    return _signedInQueryStream(
+      debugLabel: 'watchMovements',
+      build: () {
+        final authUser = _auth.currentUser!;
+        final query = _isAdminSession
+            ? _firestore.collection(FirestorePaths.movements).orderBy('createdAt', descending: true)
+            : _firestore
+                .collection(FirestorePaths.movements)
+                .where('driverId', isEqualTo: authUser.uid)
+                .orderBy('createdAt', descending: true);
+        return query.snapshots().map((snapshot) => snapshot.docs.map(_movementFromDoc).toList());
+      },
+    );
   }
 
   @override
   Stream<List<AppUser>> watchUsers() {
-    return _auth.authStateChanges().asyncExpand((user) async* {
-      if (user == null) {
-        yield const <AppUser>[];
-        return;
-      }
-      final appUser = _cachedUser ?? await _loadAppUser(user.uid);
-      if (appUser?.role == UserRole.admin) {
-        yield* _firestore.collection(FirestorePaths.users).orderBy('name').snapshots().map(
-              (snapshot) => snapshot.docs.map(_userFromDoc).toList(),
+    return _signedInQueryStream(
+      debugLabel: 'watchUsers',
+      build: () {
+        if (_isAdminSession) {
+          return _firestore.collection(FirestorePaths.users).orderBy('name').snapshots().map(
+                (snapshot) => snapshot.docs.map(_userFromDoc).toList(),
+              );
+        }
+        final uid = _auth.currentUser!.uid;
+        return _firestore.collection(FirestorePaths.users).doc(uid).snapshots().map(
+              (snapshot) => snapshot.exists ? [_userFromDoc(snapshot)] : const <AppUser>[],
             );
-        return;
-      }
-      yield* _firestore.collection(FirestorePaths.users).doc(user.uid).snapshots().map(
-            (snapshot) => snapshot.exists ? [_userFromDoc(snapshot)] : const <AppUser>[],
-          );
-    });
+      },
+    );
   }
 
   @override
   Stream<List<DriverTrack>> watchDriverTracks() {
-    return _auth.authStateChanges().asyncExpand((user) async* {
-      if (user == null) {
-        yield const <DriverTrack>[];
-        return;
-      }
-      final appUser = _cachedUser ?? await _loadAppUser(user.uid);
-      if (appUser?.role == UserRole.admin) {
-        yield* _firestore.collection(FirestorePaths.tracking).snapshots().map(
-              (snapshot) => snapshot.docs.map(_trackFromDoc).toList(),
+    return _signedInQueryStream(
+      debugLabel: 'watchDriverTracks',
+      build: () {
+        if (_isAdminSession) {
+          return _firestore.collection(FirestorePaths.tracking).snapshots().map(
+                (snapshot) => snapshot.docs.map(_trackFromDoc).toList(),
+              );
+        }
+        final uid = _auth.currentUser!.uid;
+        return _firestore.collection(FirestorePaths.tracking).doc(uid).snapshots().map(
+              (snapshot) => snapshot.exists ? [_trackFromDoc(snapshot)] : const <DriverTrack>[],
             );
-        return;
-      }
-      yield* _firestore.collection(FirestorePaths.tracking).doc(user.uid).snapshots().map(
-            (snapshot) => snapshot.exists ? [_trackFromDoc(snapshot)] : const <DriverTrack>[],
-          );
-    });
+      },
+    );
   }
 
   @override
   Stream<List<FleetAnnouncement>> watchAnnouncementsForUser(AppUser user) {
-    return _auth.authStateChanges().asyncExpand((authUser) {
-      if (authUser == null) return Stream.value(const <FleetAnnouncement>[]);
-
-      return _firestore
+    return _signedInQueryStream(
+      debugLabel: 'watchAnnouncements',
+      build: () => _firestore
           .collection(FirestorePaths.announcements)
           .where('active', isEqualTo: true)
           .orderBy('createdAt', descending: true)
@@ -198,8 +283,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
         }
 
         return announcements.where((item) => !item.isExpired).toList();
-      });
-    });
+      }),
+    );
   }
 
   Future<void> _deleteExpiredAnnouncements(List<String> ids) async {
@@ -330,14 +415,14 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<FleetAdminAlert>> watchAdminAlerts() {
-    return _auth.authStateChanges().asyncExpand((user) {
-      if (user == null) return Stream.value(const <FleetAdminAlert>[]);
-      return _firestore
+    return _signedInQueryStream(
+      debugLabel: 'watchAdminAlerts',
+      build: () => _firestore
           .collection(FirestorePaths.adminAlerts)
           .orderBy('createdAt', descending: true)
           .snapshots()
-          .map((snapshot) => snapshot.docs.map(_adminAlertFromDoc).toList());
-    });
+          .map((snapshot) => snapshot.docs.map(_adminAlertFromDoc).toList()),
+    );
   }
 
   @override
@@ -389,19 +474,20 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<DriverIssueReport>> watchDriverIssueReports(AppUser user) {
-    return _auth.authStateChanges().asyncExpand((authUser) {
-      if (authUser == null) return Stream.value(const <DriverIssueReport>[]);
+    return _signedInQueryStream(
+      debugLabel: 'watchDriverIssueReports',
+      build: () {
+        final query = user.role == UserRole.admin
+            ? _firestore.collection(FirestorePaths.driverReports)
+            : _firestore.collection(FirestorePaths.driverReports).where('driverId', isEqualTo: user.id);
 
-      final query = user.role == UserRole.admin
-          ? _firestore.collection(FirestorePaths.driverReports)
-          : _firestore.collection(FirestorePaths.driverReports).where('driverId', isEqualTo: user.id);
-
-      return query.snapshots().map((snapshot) {
-        final reports = snapshot.docs.map(_driverIssueReportFromDoc).toList();
-        reports.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        return reports;
-      });
-    });
+        return query.snapshots().map((snapshot) {
+          final reports = snapshot.docs.map(_driverIssueReportFromDoc).toList();
+          reports.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return reports;
+        });
+      },
+    );
   }
 
   @override
@@ -530,18 +616,19 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<VehicleChecklist>> watchVehicleChecklists(AppUser user) {
-    return _auth.authStateChanges().asyncExpand((authUser) {
-      if (authUser == null) return Stream.value(const <VehicleChecklist>[]);
+    return _signedInQueryStream(
+      debugLabel: 'watchVehicleChecklists',
+      build: () {
+        final query = user.role == UserRole.admin
+            ? _firestore.collection(FirestorePaths.vehicleChecklists).orderBy('completedAt', descending: true)
+            : _firestore
+                .collection(FirestorePaths.vehicleChecklists)
+                .where('driverId', isEqualTo: user.id)
+                .orderBy('completedAt', descending: true);
 
-      final query = user.role == UserRole.admin
-          ? _firestore.collection(FirestorePaths.vehicleChecklists).orderBy('completedAt', descending: true)
-          : _firestore
-              .collection(FirestorePaths.vehicleChecklists)
-              .where('driverId', isEqualTo: user.id)
-              .orderBy('completedAt', descending: true);
-
-      return query.snapshots().map((snapshot) => snapshot.docs.map(_checklistFromDoc).toList());
-    });
+        return query.snapshots().map((snapshot) => snapshot.docs.map(_checklistFromDoc).toList());
+      },
+    );
   }
 
   @override
@@ -1022,6 +1109,21 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<void> ensureSeedData() async {
+    if (_loginInFlight) return;
+    if (_seedInFlight != null) {
+      await _seedInFlight;
+      return;
+    }
+
+    _seedInFlight = _runSeedData();
+    try {
+      await _seedInFlight;
+    } finally {
+      _seedInFlight = null;
+    }
+  }
+
+  Future<void> _runSeedData() async {
     final secondaryApp = await _createSecondaryApp();
     try {
       final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
@@ -1030,7 +1132,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
       final adminSeed = _seedUsers.firstWhere((seed) => seed.role == UserRole.admin);
       await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, adminSeed);
 
-      await secondaryAuth.signInWithEmailAndPassword(email: adminSeed.email, password: adminSeed.password);
+      await secondaryAuth.signInWithEmailAndPassword(
+        email: adminSeed.email.trim().toLowerCase(),
+        password: adminSeed.password,
+      );
 
       for (final seed in _seedUsers) {
         await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
@@ -1086,14 +1191,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
     final ref = secondaryFirestore.collection(FirestorePaths.users).doc(uid);
     final existing = await ref.get();
-    if (existing.exists) {
-      await ref.set({
-        'name': seed.name,
-        'email': seed.email,
-        'role': seed.role.name,
-      }, SetOptions(merge: true));
-      return;
-    }
+    if (existing.exists) return;
 
     if (seed.role == UserRole.admin) {
       await secondaryAuth.signInWithEmailAndPassword(email: seed.email, password: seed.password);
@@ -1133,18 +1231,36 @@ class FirebaseVehicleRepository implements VehicleRepository {
     );
   }
 
+  bool _isSeedEmail(String normalizedEmail) {
+    return _seedUsers.any((seed) => seed.email.trim().toLowerCase() == normalizedEmail);
+  }
+
+  AppUser? _appUserFromSeed(String uid, String normalizedEmail) {
+    final seed = _seedUsers.where((item) => item.email.trim().toLowerCase() == normalizedEmail).firstOrNull;
+    if (seed == null) return null;
+    return AppUser(
+      id: uid,
+      name: seed.name,
+      email: normalizedEmail,
+      password: '',
+      role: seed.role,
+    );
+  }
+
   Future<AppUser?> _loadAppUser(String uid) async {
-    try {
-      final cached = await _firestore
-          .collection(FirestorePaths.users)
-          .doc(uid)
-          .get(const GetOptions(source: Source.cache))
-          .timeout(const Duration(seconds: 2));
-      if (cached.exists) {
-        return _userFromDoc(cached);
+    if (!kIsWeb) {
+      try {
+        final cached = await _firestore
+            .collection(FirestorePaths.users)
+            .doc(uid)
+            .get(const GetOptions(source: Source.cache))
+            .timeout(const Duration(seconds: 2));
+        if (cached.exists) {
+          return _userFromDoc(cached);
+        }
+      } catch (error) {
+        debugPrint('loadAppUser cache: $error');
       }
-    } catch (error) {
-      debugPrint('loadAppUser cache: $error');
     }
 
     try {
@@ -1152,7 +1268,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
           .collection(FirestorePaths.users)
           .doc(uid)
           .get(const GetOptions(source: Source.server))
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 6));
       if (!remote.exists) return null;
       return _userFromDoc(remote);
     } catch (error) {

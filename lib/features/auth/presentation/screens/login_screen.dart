@@ -55,20 +55,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     setState(() => _loading = true);
     final email = _emailController.text.trim();
-    final error = await ref.read(authControllerProvider.notifier).login(email, _passwordController.text);
-    if (!mounted) return;
+    try {
+      final error = await ref
+          .read(authControllerProvider.notifier)
+          .login(email, _passwordController.text)
+          .timeout(
+            const Duration(seconds: 18),
+            onTimeout: () => 'Tempo esgotado ao entrar. Verifique a conexao e tente novamente.',
+          );
 
-    if (error == null) {
-      await ref.read(loginPreferencesServiceProvider).save(remember: _rememberMe, email: email);
-    }
+      if (!mounted) return;
 
-    setState(() => _loading = false);
-    if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
-      return;
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+        return;
+      }
+
+      unawaited(
+        ref.read(loginPreferencesServiceProvider).save(remember: _rememberMe, email: email),
+      );
+
+      final user = ref.read(authControllerProvider).user;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Login concluido, mas perfil indisponivel. Tente novamente.')),
+        );
+        return;
+      }
+
+      context.go(AppRoutes.dashboard);
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
-    if (!mounted) return;
-    context.go(AppRoutes.dashboard);
   }
 
   Future<void> _openForgotPasswordDialog() async {
