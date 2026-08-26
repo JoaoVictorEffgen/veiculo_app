@@ -139,6 +139,13 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email', 'role']);
     }
 
+    function isDriverMarkingReplyViewed() {
+      return isSignedIn()
+        && resource.data.driverId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyViewed'])
+        && request.resource.data.replyViewed == true;
+    }
+
     match /users/{userId} {
       allow read: if isOwnUser(userId) || isAdmin();
       allow create: if isOwnUser(userId) || isAdmin();
@@ -201,7 +208,8 @@ service cloud.firestore {
         && request.resource.data.driverName is string
         && request.resource.data.message is string
         && request.resource.data.message.size() > 0;
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() || isDriverMarkingReplyViewed();
+      allow delete: if isAdmin();
     }
   }
 }

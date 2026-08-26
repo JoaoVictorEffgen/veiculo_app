@@ -284,6 +284,8 @@ class DriverIssueReport {
     this.adminReply,
     this.repliedAt,
     this.repliedByName,
+    this.viewed = false,
+    this.replyViewed = true,
   });
 
   final String id;
@@ -296,8 +298,11 @@ class DriverIssueReport {
   final String? adminReply;
   final DateTime? repliedAt;
   final String? repliedByName;
+  final bool viewed;
+  final bool replyViewed;
 
   bool get hasAdminReply => adminReply != null && adminReply!.trim().isNotEmpty;
+  bool get hasUnreadAdminReply => hasAdminReply && !replyViewed;
 }
 
 enum MaintenanceAlertKind { kmDue, dateDue }

@@ -43,6 +43,7 @@ abstract class VehicleRepository {
   });
   Stream<List<DriverIssueReport>> watchDriverIssueReports(AppUser user);
   Future<String?> replyToDriverIssueReport(AppUser admin, String reportId, String reply);
+  Future<void> markDriverReportRepliesViewed(AppUser driver);
 
   Future<String?> startVehicle(String vehicleId, AppUser user);
 

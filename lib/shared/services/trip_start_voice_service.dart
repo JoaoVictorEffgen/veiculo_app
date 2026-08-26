@@ -17,7 +17,19 @@ class TripStartVoiceService {
       await _ensureConfigured();
       final greeting = _greetingForNow();
       await _tts.stop();
-      await _tts.speak('$greeting, $trimmedName! Lembre-se de colocar o cinto, motorista.');
+      await _tts.speak('Olá $greeting, $trimmedName, não esqueça do cinto.');
+    } catch (error) {
+      debugPrint('TripStartVoiceService: $error');
+    }
+  }
+
+  Future<void> announceTripStop() async {
+    if (kIsWeb) return;
+
+    try {
+      await _ensureConfigured();
+      await _tts.stop();
+      await _tts.speak('Não esqueça os pertences.');
     } catch (error) {
       debugPrint('TripStartVoiceService: $error');
     }

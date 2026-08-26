@@ -35,6 +35,7 @@ class MainAppShell extends ConsumerWidget {
     final isAdmin = user?.role == UserRole.admin;
     final location = GoRouterState.of(context).matchedLocation;
     final unreadAlerts = isAdmin ? ref.watch(unreadAdminAlertsCountProvider) : 0;
+    final unreadReportReplies = isAdmin ? 0 : ref.watch(unreadDriverReportRepliesCountProvider);
 
     return Scaffold(
       body: child,
@@ -46,6 +47,7 @@ class MainAppShell extends ConsumerWidget {
             )
           : _DriverBottomNav(
               selectedIndex: _driverSelectedIndex(location),
+              unreadReportReplies: unreadReportReplies,
               onVehicles: () => context.go(AppRoutes.dashboard),
               onReports: () => context.go(AppRoutes.reports),
               onChecklists: () => context.go(AppRoutes.checklists),
@@ -150,6 +152,7 @@ class _AdminBottomNav extends StatelessWidget {
 class _DriverBottomNav extends StatelessWidget {
   const _DriverBottomNav({
     required this.selectedIndex,
+    required this.unreadReportReplies,
     required this.onVehicles,
     required this.onReports,
     required this.onChecklists,
@@ -157,6 +160,7 @@ class _DriverBottomNav extends StatelessWidget {
   });
 
   final int selectedIndex;
+  final int unreadReportReplies;
   final VoidCallback onVehicles;
   final VoidCallback onReports;
   final VoidCallback onChecklists;
@@ -187,6 +191,7 @@ class _DriverBottomNav extends StatelessWidget {
                 selectedIcon: Icons.report,
                 label: 'Relatos',
                 selected: selectedIndex == 1,
+                badgeCount: unreadReportReplies,
                 onTap: onReports,
               ),
               _NavItem(

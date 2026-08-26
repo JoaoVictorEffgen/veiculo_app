@@ -132,6 +132,9 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
       'Disponivel apenas com Firebase.';
 
   @override
+  Future<void> markDriverReportRepliesViewed(AppUser driver) async {}
+
+  @override
   Future<void> saveFcmToken(AppUser user, String token) async {}
 
   @override

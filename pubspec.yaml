@@ -1,7 +1,7 @@
 name: vehicle_control_app
 description: "Drive Control — controle inteligente de veículos e motoristas."
 publish_to: 'none'
-version: 0.3.34
+version: 0.3.36
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

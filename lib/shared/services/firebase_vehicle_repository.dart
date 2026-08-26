@@ -29,6 +29,24 @@ class FirebaseVehicleRepository implements VehicleRepository {
   static const _seedUsers = AppSeedData.users;
   static const _seedVehicles = AppSeedData.vehicles;
 
+  Stream<List<T>> _signedInQueryStream<T>({
+    required String debugLabel,
+    required Stream<List<T>> Function() build,
+  }) {
+    if (_auth.currentUser == null) {
+      return Stream.value(const []);
+    }
+
+    return build().transform(
+      StreamTransformer<List<T>, List<T>>.fromHandlers(
+        handleError: (error, stackTrace, sink) {
+          debugPrint('$debugLabel: $error');
+          sink.add(const []);
+        },
+      ),
+    );
+  }
+
   @override
   AppUser? get currentUser => _cachedUser;
 
@@ -366,29 +384,43 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<FleetAdminAlert>> watchAdminAlerts() {
-    return _auth.authStateChanges().asyncExpand((user) {
-      if (user == null) return Stream.value(const <FleetAdminAlert>[]);
-      return _firestore
+    return _signedInQueryStream(
+      debugLabel: 'watchAdminAlerts',
+      build: () => _firestore
           .collection(FirestorePaths.adminAlerts)
-          .orderBy('createdAt', descending: true)
           .snapshots()
-          .map((snapshot) => snapshot.docs.map(_adminAlertFromDoc).toList());
-    });
+          .map((snapshot) {
+        final alerts = snapshot.docs.map(_adminAlertFromDoc).toList();
+        alerts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return alerts;
+      }),
+    );
   }
 
   @override
   Future<void> markAdminAlertsViewed(AppUser admin) async {
     if (admin.role != UserRole.admin) return;
 
-    final unread = await _firestore
+    final unreadAlerts = await _firestore
         .collection(FirestorePaths.adminAlerts)
         .where('viewed', isEqualTo: false)
         .get();
 
-    if (unread.docs.isEmpty) return;
+    final unreadReports = await _firestore
+        .collection(FirestorePaths.driverReports)
+        .where('viewed', isEqualTo: false)
+        .get();
+
+    if (unreadAlerts.docs.isEmpty && unreadReports.docs.isEmpty) return;
 
     final batch = _firestore.batch();
-    for (final doc in unread.docs) {
+    for (final doc in unreadAlerts.docs) {
+      batch.update(doc.reference, {
+        'viewed': true,
+        'viewedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    for (final doc in unreadReports.docs) {
       batch.update(doc.reference, {
         'viewed': true,
         'viewedAt': FieldValue.serverTimestamp(),
@@ -408,13 +440,18 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final trimmed = message.trim();
     if (trimmed.isEmpty) return 'Descreva o problema antes de enviar.';
 
+    final authUid = _auth.currentUser?.uid;
+    if (authUid == null) return 'Sessao expirada. Faca login novamente.';
+    if (authUid != driver.id) return 'Sessao invalida. Faca login novamente.';
+
     try {
       await _firestore.collection(FirestorePaths.driverReports).add({
-        'driverId': driver.id,
+        'driverId': authUid,
         'driverName': driver.name,
         'message': trimmed,
         if (vehicleId != null) 'vehicleId': vehicleId,
         if (vehicleName != null) 'vehicleName': vehicleName,
+        'viewed': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
       return null;
@@ -425,19 +462,22 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<DriverIssueReport>> watchDriverIssueReports(AppUser user) {
-    return _auth.authStateChanges().asyncExpand((authUser) {
-      if (authUser == null) return Stream.value(const <DriverIssueReport>[]);
+    if (_auth.currentUser == null) {
+      return Stream.value(const <DriverIssueReport>[]);
+    }
 
-      final query = user.role == UserRole.admin
-          ? _firestore.collection(FirestorePaths.driverReports)
-          : _firestore.collection(FirestorePaths.driverReports).where('driverId', isEqualTo: user.id);
+    final query = user.role == UserRole.admin
+        ? _firestore.collection(FirestorePaths.driverReports)
+        : _firestore.collection(FirestorePaths.driverReports).where('driverId', isEqualTo: user.id);
 
-      return query.snapshots().map((snapshot) {
+    return _signedInQueryStream(
+      debugLabel: 'watchDriverIssueReports',
+      build: () => query.snapshots().map((snapshot) {
         final reports = snapshot.docs.map(_driverIssueReportFromDoc).toList();
         reports.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         return reports;
-      });
-    });
+      }),
+    );
   }
 
   @override
@@ -451,11 +491,37 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'adminReply': trimmed,
         'repliedAt': FieldValue.serverTimestamp(),
         'repliedByName': admin.name,
+        'replyViewed': false,
       });
       return null;
     } on FirebaseException catch (error) {
       return error.message ?? 'Erro ao enviar resposta.';
     }
+  }
+
+  @override
+  Future<void> markDriverReportRepliesViewed(AppUser driver) async {
+    if (driver.role != UserRole.driver) return;
+
+    final reports = await _firestore
+        .collection(FirestorePaths.driverReports)
+        .where('driverId', isEqualTo: driver.id)
+        .get();
+
+    final pending = reports.docs.where((doc) {
+      final data = doc.data();
+      final hasReply = (data['adminReply'] as String? ?? '').trim().isNotEmpty;
+      if (!hasReply) return false;
+      return data['replyViewed'] != true;
+    });
+
+    if (pending.isEmpty) return;
+
+    final batch = _firestore.batch();
+    for (final doc in pending) {
+      batch.update(doc.reference, {'replyViewed': true});
+    }
+    await batch.commit();
   }
 
   @override
@@ -563,18 +629,24 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<VehicleChecklist>> watchVehicleChecklists(AppUser user) {
-    return _auth.authStateChanges().asyncExpand((authUser) {
-      if (authUser == null) return Stream.value(const <VehicleChecklist>[]);
+    if (_auth.currentUser == null) {
+      return Stream.value(const <VehicleChecklist>[]);
+    }
 
-      final query = user.role == UserRole.admin
-          ? _firestore.collection(FirestorePaths.vehicleChecklists).orderBy('completedAt', descending: true)
-          : _firestore
-              .collection(FirestorePaths.vehicleChecklists)
-              .where('driverId', isEqualTo: user.id)
-              .orderBy('completedAt', descending: true);
+    final query = user.role == UserRole.admin
+        ? _firestore.collection(FirestorePaths.vehicleChecklists)
+        : _firestore
+            .collection(FirestorePaths.vehicleChecklists)
+            .where('driverId', isEqualTo: user.id);
 
-      return query.snapshots().map((snapshot) => snapshot.docs.map(_checklistFromDoc).toList());
-    });
+    return _signedInQueryStream(
+      debugLabel: 'watchVehicleChecklists',
+      build: () => query.snapshots().map((snapshot) {
+        final checklists = snapshot.docs.map(_checklistFromDoc).toList();
+        checklists.sort((a, b) => b.completedAt.compareTo(a.completedAt));
+        return checklists;
+      }),
+    );
   }
 
   @override
@@ -1589,6 +1661,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
       repliedAt: (data['repliedAt'] as Timestamp?)?.toDate(),
       repliedByName: data['repliedByName'] as String?,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      viewed: data['viewed'] as bool? ?? false,
+      replyViewed: data['replyViewed'] as bool? ?? (data['adminReply'] as String? ?? '').trim().isEmpty,
     );
   }
 

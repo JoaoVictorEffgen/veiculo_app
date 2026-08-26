@@ -360,9 +360,19 @@ final driverIssueReportsProvider = StreamProvider<List<DriverIssueReport>>((ref)
   return ref.watch(repositoryProvider).watchDriverIssueReports(user);
 });
 
+final unreadDriverReportRepliesCountProvider = Provider<int>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null || user.role != UserRole.driver) return 0;
+  final reports = ref.watch(driverIssueReportsProvider).valueOrNull ?? const <DriverIssueReport>[];
+  return reports.where((report) => report.hasUnreadAdminReply).length;
+});
+
 final unreadAdminAlertsCountProvider = Provider<int>((ref) {
   final alerts = ref.watch(adminAlertsProvider).valueOrNull ?? const <FleetAdminAlert>[];
-  return alerts.where((alert) => !alert.viewed).length;
+  final reports = ref.watch(driverIssueReportsProvider).valueOrNull ?? const <DriverIssueReport>[];
+  final unreadAlerts = alerts.where((alert) => !alert.viewed).length;
+  final unreadReports = reports.where((report) => !report.viewed).length;
+  return unreadAlerts + unreadReports;
 });
 
 final vehicleChecklistsProvider = StreamProvider<List<VehicleChecklist>>((ref) {

@@ -19,6 +19,21 @@ class DriverReportsScreen extends ConsumerStatefulWidget {
 class _DriverReportsScreenState extends ConsumerState<DriverReportsScreen> {
   final _messageController = TextEditingController();
   String? _selectedVehicleId;
+  var _markedRepliesViewed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _markRepliesViewed());
+  }
+
+  Future<void> _markRepliesViewed() async {
+    if (_markedRepliesViewed) return;
+    final user = ref.read(authControllerProvider).user;
+    if (user == null || user.role != UserRole.driver) return;
+    _markedRepliesViewed = true;
+    await ref.read(repositoryProvider).markDriverReportRepliesViewed(user);
+  }
 
   @override
   void dispose() {
@@ -71,6 +86,10 @@ class _DriverReportsScreenState extends ConsumerState<DriverReportsScreen> {
 
     final reportsAsync = ref.watch(driverIssueReportsProvider);
     final vehicles = ref.watch(vehicleControllerProvider);
+
+    ref.listen(driverIssueReportsProvider, (_, __) {
+      if (!_markedRepliesViewed) _markRepliesViewed();
+    });
 
     return Scaffold(
       appBar: const CorporateAppBar(title: 'Relatar problema'),
@@ -151,6 +170,30 @@ class _DriverReportsScreenState extends ConsumerState<DriverReportsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            if (report.hasUnreadAdminReply) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.accent.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.notifications_active_outlined, color: AppColors.accent, size: 16),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Nova resposta da administracao',
+                                      style: TextStyle(
+                                        color: AppColors.accent,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                            ],
                             Row(
                               children: [
                                 const Icon(Icons.warning_amber_rounded, color: AppColors.statusStopped, size: 20),

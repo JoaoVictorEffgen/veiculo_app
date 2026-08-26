@@ -447,6 +447,7 @@ class _VehicleCard extends StatelessWidget {
     }
 
     await ref.read(locationTrackingServiceProvider).endTripSession();
+    unawaited(ref.read(tripStartVoiceServiceProvider).announceTripStop());
 
     if (context.mounted && distanceKm > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
