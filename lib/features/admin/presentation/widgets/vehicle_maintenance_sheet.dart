@@ -186,7 +186,7 @@ class _VehicleMaintenanceSheetState extends ConsumerState<VehicleMaintenanceShee
     );
     ref.read(vehicleControllerProvider.notifier).refresh();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error ?? 'Plano PDF anexado.')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error ?? 'Plano de manutencao anexado.')));
   }
 
   @override
@@ -354,11 +354,11 @@ class _VehicleMaintenanceSheetState extends ConsumerState<VehicleMaintenanceShee
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const CorporateSectionTitle(title: 'Plano PDF'),
+                    const CorporateSectionTitle(title: 'Plano de manutencao'),
                     Text(
                       vehicle.hasMaintenancePlan
                           ? 'Arquivo: ${vehicle.maintenancePlanFileName}'
-                          : 'Nenhum PDF anexado.',
+                          : 'Nenhum plano de manutencao anexado.',
                       style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
                     ),
                     const SizedBox(height: 12),
@@ -372,7 +372,7 @@ class _VehicleMaintenanceSheetState extends ConsumerState<VehicleMaintenanceShee
                     ElevatedButton.icon(
                       onPressed: _attachPlan,
                       icon: const Icon(Icons.upload_file_outlined),
-                      label: Text(vehicle.hasMaintenancePlan ? 'SUBSTITUIR PDF' : 'ANEXAR PDF'),
+                      label: Text(vehicle.hasMaintenancePlan ? 'SUBSTITUIR PLANO' : 'ANEXAR PLANO'),
                     ),
                   ],
                 ),

@@ -81,6 +81,10 @@ class VehicleController extends StateNotifier<List<Vehicle>> {
       (vehicles) {
         _hasLoaded = true;
         state = vehicles;
+        if (vehicles.isEmpty && !_seedRecoveryAttempted) {
+          _seedRecoveryAttempted = true;
+          unawaited(_recoverEmptyFleet());
+        }
       },
       onError: (Object error, StackTrace stackTrace) {
         debugPrint('Erro no stream de veiculos: $error');
@@ -92,11 +96,27 @@ class VehicleController extends StateNotifier<List<Vehicle>> {
   final VehicleRepository _repository;
   StreamSubscription<List<Vehicle>>? _subscription;
   bool _hasLoaded = false;
+  bool _seedRecoveryAttempted = false;
 
   bool get hasLoaded => _hasLoaded;
 
+  Future<void> _recoverEmptyFleet() async {
+    try {
+      await _repository.ensureSeedData();
+      final vehicles = await _repository.fetchVehicles();
+      if (vehicles.isNotEmpty) state = vehicles;
+    } catch (error, stackTrace) {
+      debugPrint('Recuperacao da frota seed: $error\n$stackTrace');
+    }
+  }
+
   Future<void> refresh() async {
-    state = await _repository.fetchVehicles();
+    var vehicles = await _repository.fetchVehicles();
+    if (vehicles.isEmpty) {
+      await _repository.ensureSeedData();
+      vehicles = await _repository.fetchVehicles();
+    }
+    state = vehicles;
   }
 
   Future<String?> start(String vehicleId, AppUser user) async {

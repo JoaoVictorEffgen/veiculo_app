@@ -1,19 +1,15 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router.dart';
 import '../../../../app/theme.dart';
-import '../../../../core/utils/date_formatter.dart';
-import '../../../../core/utils/loading_dialog.dart';
 import '../../../../core/widgets/corporate_ui.dart';
 import '../../../../core/widgets/fleet_announcement_banner.dart';
 import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/app_providers.dart';
 import '../widgets/vehicle_maintenance_sheet.dart';
-import '../../../vehicles/presentation/screens/maintenance_plan_viewer_screen.dart';
 
 class AdminScreen extends ConsumerWidget {
   const AdminScreen({super.key});
@@ -21,13 +17,14 @@ class AdminScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authControllerProvider).user;
-    if (user?.role != UserRole.admin) {
+    if (user == null || user.role != UserRole.admin) {
       return Scaffold(
         appBar: AppBar(title: const Text('Acesso negado')),
         body: Center(child: ElevatedButton(onPressed: () => context.go(AppRoutes.dashboard), child: const Text('Voltar'))),
       );
     }
 
+    final admin = user;
     ref.watch(adminControllerProvider);
     final vehicles = ref.watch(vehicleControllerProvider);
     final users = ref.watch(usersProvider).valueOrNull ?? [];
@@ -43,7 +40,7 @@ class AdminScreen extends ConsumerWidget {
           const SizedBox(height: 6),
           const Text('Cadastre, edite e acompanhe veiculos e motoristas.', style: TextStyle(color: AppColors.textSecondary)),
           const SizedBox(height: 20),
-          FleetAnnouncementEditor(admin: user!),
+          FleetAnnouncementEditor(admin: admin),
           const SizedBox(height: 20),
           CorporateSurface(
             child: Column(
@@ -69,12 +66,12 @@ class AdminScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(children: [
-                  Expanded(child: ElevatedButton.icon(onPressed: () => _chooseCreate(context, ref, user!), icon: const Icon(Icons.add_circle_outline), label: const Text('CADASTRAR'))),
+                  Expanded(child: ElevatedButton.icon(onPressed: () => _chooseCreate(context, ref, admin), icon: const Icon(Icons.add_circle_outline), label: const Text('CADASTRAR'))),
                   const SizedBox(width: 12),
-                  Expanded(child: OutlinedButton.icon(onPressed: () => _chooseEdit(context, ref, user!), icon: const Icon(Icons.edit_outlined), label: const Text('EDITAR'))),
+                  Expanded(child: OutlinedButton.icon(onPressed: () => _chooseEdit(context, ref, admin), icon: const Icon(Icons.edit_outlined), label: const Text('EDITAR'))),
                 ]),
                 const SizedBox(height: 12),
-                OutlinedButton.icon(onPressed: () => _chooseDelete(context, ref, user!), icon: const Icon(Icons.delete_outline), label: const Text('EXCLUIR')),
+                OutlinedButton.icon(onPressed: () => _chooseDelete(context, ref, admin), icon: const Icon(Icons.delete_outline), label: const Text('EXCLUIR')),
               ],
             ),
           ),
@@ -101,7 +98,7 @@ class AdminScreen extends ConsumerWidget {
                     '${vehicle.model} • ${vehicle.plate}\n'
                     '${vehicle.currentDriverName ?? 'Disponivel'}${vehicle.stoppedLocation == null ? '' : ' • ${vehicle.stoppedLocation}'}\n'
                     '${vehicle.odometerKm != null ? 'Odometro: ${vehicle.odometerKm!.toStringAsFixed(0)} km • ' : ''}'
-                    '${vehicle.hasMaintenancePlan ? 'Plano PDF anexado' : 'Sem plano PDF'}',
+                    '${vehicle.hasMaintenancePlan ? 'Plano de manutencao anexado' : 'Sem plano de manutencao'}',
                   ),
                   isThreeLine: true,
                   trailing: Row(
@@ -117,11 +114,11 @@ class AdminScreen extends ConsumerWidget {
                                   ? AppColors.statusMoving
                                   : null,
                         ),
-                        onPressed: () => openVehicleMaintenanceSheet(context, ref, admin: user!, vehicle: vehicle),
+                        onPressed: () => openVehicleMaintenanceSheet(context, ref, admin: admin, vehicle: vehicle),
                       ),
                       IconButton(
                         icon: const Icon(Icons.edit_outlined),
-                        onPressed: () => _editVehicle(context, ref, user!, vehicle),
+                        onPressed: () => _editVehicle(context, ref, admin, vehicle),
                       ),
                     ],
                   ),
@@ -137,7 +134,7 @@ class AdminScreen extends ConsumerWidget {
                   subtitle: Text(driver.email),
                   trailing: IconButton(
                     icon: const Icon(Icons.edit_outlined),
-                    onPressed: () => _editDriver(context, ref, user!, driver),
+                    onPressed: () => _editDriver(context, ref, admin, driver),
                   ),
                 ),
               )),
@@ -274,96 +271,6 @@ class AdminScreen extends ConsumerWidget {
     final error = await ref.read(adminControllerProvider.notifier).deleteVehicle(admin, vehicle.id);
     ref.read(vehicleControllerProvider.notifier).refresh();
     if (error != null && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
-  }
-
-  Future<void> _manageMaintenancePlan(BuildContext context, WidgetRef ref, AppUser admin, Vehicle vehicle) async {
-    final action = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Plano de manutencao — ${vehicle.name}'),
-        content: Text(
-          vehicle.hasMaintenancePlan
-              ? 'Arquivo: ${vehicle.maintenancePlanFileName}\n'
-                  'Tamanho: ${((vehicle.maintenancePlanSizeBytes ?? 0) / 1024).toStringAsFixed(0)} KB\n'
-                  'Atualizado: ${vehicle.maintenancePlanUpdatedAt == null ? '—' : formatDateTime(vehicle.maintenancePlanUpdatedAt)}'
-              : 'Nenhum plano anexado. Escolha um PDF do celular ou computador.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fechar')),
-          if (vehicle.hasMaintenancePlan) ...[
-            TextButton(onPressed: () => Navigator.pop(context, 'view'), child: const Text('Visualizar')),
-            TextButton(onPressed: () => Navigator.pop(context, 'remove'), child: const Text('Remover')),
-          ],
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, 'attach'),
-            child: Text(vehicle.hasMaintenancePlan ? 'Substituir PDF' : 'Anexar PDF'),
-          ),
-        ],
-      ),
-    );
-    if (!context.mounted || action == null) return;
-
-    if (action == 'view') {
-      await _openMaintenancePlan(context, ref, vehicle);
-      return;
-    }
-
-    if (action == 'remove') {
-      final confirmed = await _confirmDelete(context, 'Remover plano de ${vehicle.name}?');
-      if (!confirmed || !context.mounted) return;
-      final error = await ref.read(adminControllerProvider.notifier).removeMaintenancePlan(admin, vehicle.id);
-      ref.read(vehicleControllerProvider.notifier).refresh();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error ?? 'Plano removido.')));
-      }
-      return;
-    }
-
-    if (action == 'attach') {
-      final picked = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['pdf'],
-        withData: true,
-      );
-      if (!context.mounted) return;
-      final file = picked?.files.single;
-      if (file == null || file.bytes == null) return;
-
-      final error = await runWithBlockingLoadingDialog<String?>(
-        context,
-        message: 'Enviando plano de manutencao...',
-        action: () => ref.read(adminControllerProvider.notifier).uploadMaintenancePlan(
-              admin,
-              vehicle.id,
-              file.bytes!,
-              file.name,
-            ),
-      );
-
-      ref.read(vehicleControllerProvider.notifier).refresh();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error ?? 'Plano de manutencao anexado.')),
-        );
-      }
-    }
-  }
-
-  Future<void> _openMaintenancePlan(BuildContext context, WidgetRef ref, Vehicle vehicle) async {
-    if (!vehicle.hasMaintenancePlan) return;
-
-    await openMaintenancePlanViewer(
-      context,
-      vehicleName: vehicle.name,
-      fileName: vehicle.maintenancePlanFileName ?? 'plano_manutencao.pdf',
-      loadBytes: () async {
-        final bytes = await ref.read(repositoryProvider).fetchMaintenancePlanBytes(vehicle.id);
-        if (bytes == null || bytes.isEmpty) {
-          throw Exception('Plano de manutencao nao encontrado.');
-        }
-        return bytes;
-      },
-    );
   }
 
   Future<void> _addDriver(BuildContext context, WidgetRef ref, AppUser admin) async {

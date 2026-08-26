@@ -128,6 +128,10 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   Stream<List<DriverIssueReport>> watchDriverIssueReports(AppUser user) => Stream.value(const []);
 
   @override
+  Future<String?> replyToDriverIssueReport(AppUser admin, String reportId, String reply) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
   Future<void> saveFcmToken(AppUser user, String token) async {}
 
   @override

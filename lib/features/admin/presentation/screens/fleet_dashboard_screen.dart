@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../app/theme.dart';
-import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/corporate_ui.dart';
 import '../../../../core/widgets/fleet_period_filter.dart';
 import '../../../../core/widgets/fleet_announcement_banner.dart';
@@ -178,81 +177,6 @@ class _ChartCard extends StatelessWidget {
   }
 }
 
-class _KmBarChart extends StatelessWidget {
-  const _KmBarChart({
-    required this.data,
-    required this.emptyMessage,
-    required this.barColor,
-    required this.formatValue,
-  });
-
-  final List<NamedKm> data;
-  final String emptyMessage;
-  final Color barColor;
-  final String Function(double km) formatValue;
-
-  @override
-  Widget build(BuildContext context) {
-    if (data.isEmpty || data.every((item) => item.km <= 0)) {
-      return _EmptyChart(message: emptyMessage);
-    }
-
-    final maxY = data.map((e) => e.km).reduce((a, b) => a > b ? a : b);
-    final height = (data.length * 44.0).clamp(200.0, 360.0);
-
-    return SizedBox(
-      height: height,
-      child: BarChart(
-        BarChartData(
-          maxY: maxY <= 0 ? 1 : maxY * 1.15,
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 84,
-                getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
-                  if (index < 0 || index >= data.length) return const SizedBox.shrink();
-                  return Text(data[index].name.split(' ').first, style: const TextStyle(fontSize: 11));
-                },
-              ),
-            ),
-            bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 52,
-                getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
-                  if (index < 0 || index >= data.length) return const SizedBox.shrink();
-                  return Text(formatValue(data[index].km), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600));
-                },
-              ),
-            ),
-          ),
-          gridData: FlGridData(show: true, drawVerticalLine: false),
-          borderData: FlBorderData(show: false),
-          barGroups: [
-            for (var i = 0; i < data.length; i++)
-              BarChartGroupData(
-                x: i,
-                barRods: [
-                  BarChartRodData(
-                    toY: data[i].km,
-                    width: 16,
-                    color: barColor,
-                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)),
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _DurationBarChart extends StatelessWidget {
   const _DurationBarChart({required this.data});
 
@@ -310,79 +234,6 @@ class _DurationBarChart extends StatelessWidget {
                     toY: hours[i],
                     width: 16,
                     color: AppColors.statusMoving,
-                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)),
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CountBarChart extends StatelessWidget {
-  const _CountBarChart({
-    required this.data,
-    required this.barColor,
-    this.emptyMessage = 'Nenhuma utilizacao registrada no periodo.',
-  });
-
-  final List<NamedCount> data;
-  final Color barColor;
-  final String emptyMessage;
-
-  @override
-  Widget build(BuildContext context) {
-    if (data.isEmpty || data.every((item) => item.count == 0)) {
-      return _EmptyChart(message: emptyMessage);
-    }
-
-    final maxY = data.map((e) => e.count).reduce((a, b) => a > b ? a : b).toDouble();
-    final height = (data.length * 44.0).clamp(200.0, 360.0);
-
-    return SizedBox(
-      height: height,
-      child: BarChart(
-        BarChartData(
-          maxY: maxY <= 0 ? 1 : maxY * 1.15,
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 84,
-                getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
-                  if (index < 0 || index >= data.length) return const SizedBox.shrink();
-                  return Text(data[index].name, style: const TextStyle(fontSize: 11));
-                },
-              ),
-            ),
-            bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 28,
-                getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
-                  if (index < 0 || index >= data.length) return const SizedBox.shrink();
-                  return Text('${data[index].count}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600));
-                },
-              ),
-            ),
-          ),
-          gridData: FlGridData(show: true, drawVerticalLine: false),
-          borderData: FlBorderData(show: false),
-          barGroups: [
-            for (var i = 0; i < data.length; i++)
-              BarChartGroupData(
-                x: i,
-                barRods: [
-                  BarChartRodData(
-                    toY: data[i].count.toDouble(),
-                    width: 16,
-                    color: barColor,
                     borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)),
                   ),
                 ],

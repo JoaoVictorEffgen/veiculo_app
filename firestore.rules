@@ -134,10 +134,15 @@ service cloud.firestore {
         || (isSignedIn() && checklistId.matches('^' + request.auth.uid + '_.*'));
     }
 
+    function isOwnProfileUpdate(userId) {
+      return isOwnUser(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email', 'role']);
+    }
+
     match /users/{userId} {
       allow read: if isOwnUser(userId) || isAdmin();
       allow create: if isOwnUser(userId) || isAdmin();
-      allow update: if isAdmin() || isOwnFcmTokenUpdate(userId);
+      allow update: if isAdmin() || isOwnFcmTokenUpdate(userId) || isOwnProfileUpdate(userId);
       allow delete: if isAdmin();
     }
 

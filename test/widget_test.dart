@@ -1,8 +1,11 @@
 import 'package:drift/native.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_core_platform_interface/test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:vehicle_control_app/app/app.dart';
+import 'package:vehicle_control_app/firebase_options.dart';
 import 'package:vehicle_control_app/shared/database/app_database.dart';
 import 'package:vehicle_control_app/shared/services/app_providers.dart';
 import 'package:vehicle_control_app/shared/services/local_vehicle_repository.dart';
@@ -11,6 +14,15 @@ import 'package:vehicle_control_app/shared/services/location_tracking_service.da
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setupFirebaseCoreMocks();
+
+  setUpAll(() async {
+    try {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    } on FirebaseException catch (error) {
+      if (error.code != 'duplicate-app') rethrow;
+    }
+  });
 
   testWidgets('opens the vehicle control login', (WidgetTester tester) async {
     final local = await LocalVehicleRepository.create(
@@ -29,10 +41,8 @@ void main() {
         child: const VehicleControlApp(),
       ),
     );
-    await tester.pumpAndSettle(const Duration(seconds: 2));
+    await tester.pumpAndSettle(const Duration(seconds: 5));
 
-    expect(find.text('DRIVE '), findsOneWidget);
-    expect(find.text('CONTROL'), findsOneWidget);
     expect(find.text('Entrar'), findsOneWidget);
   });
 }

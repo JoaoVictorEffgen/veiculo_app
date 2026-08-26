@@ -8,7 +8,6 @@ import '../../../../core/widgets/admin_only_gate.dart';
 import '../../../../core/widgets/corporate_ui.dart';
 import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../shared/models/app_models.dart';
-import '../../../../shared/models/fleet_analytics.dart';
 import '../../../../shared/services/app_providers.dart';
 
 class AlertsScreen extends ConsumerStatefulWidget {

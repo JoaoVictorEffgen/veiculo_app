@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -48,6 +47,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
       final loaded = await _ensureUserProfile(firebaseUser, firebaseUser.email?.trim().toLowerCase() ?? '');
       _cachedUser = loaded;
+      if (loaded?.role == UserRole.admin) {
+        unawaited(_ensureAdminFleetReady());
+      }
       yield loaded;
       continue;
     }
@@ -81,6 +83,20 @@ class FirebaseVehicleRepository implements VehicleRepository {
       await ensureSeedData();
       _cachedUser = await _ensureUserProfile(credential.user!, normalizedEmail);
       if (_cachedUser == null) return 'Usuario sem cadastro no sistema.';
+
+      if (_isSeedEmail(normalizedEmail)) {
+        await _repairSeedUserProfile(credential.user!.uid, normalizedEmail);
+        final synced = await _loadAppUser(credential.user!.uid, preferServer: true);
+        if (synced != null) _cachedUser = synced;
+      }
+
+      if (_cachedUser!.role == UserRole.admin) {
+        final adminError = await _ensureAdminFleetReady();
+        if (adminError != null) return adminError;
+        _cachedUser = await _loadAppUser(credential.user!.uid, preferServer: true) ?? _cachedUser;
+      }
+
+      await ensureSeedData();
       return null;
     } on FirebaseAuthException catch (error) {
       return _authErrorMessage(error);
@@ -723,7 +739,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<String?> addVehicle(AppUser actor, {required String name, required String model, required String plate}) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
+    final accessError = await _requireFirestoreAdmin(actor);
+    if (accessError != null) return accessError;
     try {
       final id = 'vehicle-${DateTime.now().microsecondsSinceEpoch}';
       await _firestore.collection(FirestorePaths.vehicles).doc(id).set({
@@ -739,13 +756,38 @@ class FirebaseVehicleRepository implements VehicleRepository {
       });
       return null;
     } on FirebaseException catch (error) {
-      return error.message;
+      return _friendlyFirestoreError(error, 'criar veiculo');
     }
+  }
+
+  String _friendlyFirestoreError(FirebaseException error, String action) {
+    if (error.code == 'permission-denied') {
+      return 'Sem permissao para $action. Saia e entre com admin@empresa.com (senha 123456).';
+    }
+    return error.message ?? 'Erro ao $action.';
+  }
+
+  Future<String?> _requireFirestoreAdmin(AppUser actor) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
+
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid != actor.id) return 'Sessao invalida. Entre novamente.';
+
+    if (_isSeedEmail(actor.email.trim().toLowerCase())) {
+      await _repairSeedUserProfile(uid, actor.email.trim().toLowerCase());
+    }
+
+    final doc = await _firestore.collection(FirestorePaths.users).doc(uid).get(const GetOptions(source: Source.server));
+    if (!doc.exists || doc.data()?['role'] != UserRole.admin.name) {
+      return 'Perfil admin ausente no Firestore. Saia e entre com admin@empresa.com (senha 123456).';
+    }
+    return null;
   }
 
   @override
   Future<String?> editVehicle(AppUser actor, {required String vehicleId, required String name, required String model, required String plate}) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
+    final accessError = await _requireFirestoreAdmin(actor);
+    if (accessError != null) return accessError;
     try {
       await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).update({
         'name': name.trim(),
@@ -990,7 +1032,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<String?> addDriver(AppUser actor, {required String name, required String email, required String password}) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
+    final accessError = await _requireFirestoreAdmin(actor);
+    if (accessError != null) return accessError;
     try {
       final credential = await _createAuthUserWithoutSwitchingSession(email: email.trim().toLowerCase(), password: password);
       await _firestore.collection(FirestorePaths.users).doc(credential.user!.uid).set({
@@ -1002,7 +1045,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
     } on FirebaseAuthException catch (error) {
       return _authErrorMessage(error);
     } on FirebaseException catch (error) {
-      return error.message;
+      return _friendlyFirestoreError(error, 'cadastrar motorista');
     }
   }
 
@@ -1035,6 +1078,11 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<void> ensureSeedData() async {
+    await _ensureSeedViaSecondaryApp();
+    await _ensureAdminFleetReady();
+  }
+
+  Future<void> _ensureSeedViaSecondaryApp() async {
     final secondaryApp = await _createSecondaryApp();
     try {
       final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
@@ -1043,31 +1091,183 @@ class FirebaseVehicleRepository implements VehicleRepository {
       final adminSeed = _seedUsers.firstWhere((seed) => seed.role == UserRole.admin);
       await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, adminSeed);
 
-      await secondaryAuth.signInWithEmailAndPassword(
+      final adminCredential = await secondaryAuth.signInWithEmailAndPassword(
         email: adminSeed.email.trim().toLowerCase(),
         password: adminSeed.password,
       );
+      final adminUid = adminCredential.user!.uid;
+      await secondaryFirestore.collection(FirestorePaths.users).doc(adminUid).set({
+        'name': adminSeed.name,
+        'email': adminSeed.email.trim().toLowerCase(),
+        'role': adminSeed.role.name,
+      }, SetOptions(merge: true));
 
       for (final seed in _seedUsers) {
         await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
       }
 
-      final batch = secondaryFirestore.batch();
+      await secondaryAuth.signInWithEmailAndPassword(
+        email: adminSeed.email.trim().toLowerCase(),
+        password: adminSeed.password,
+      );
+
       var createdVehicles = 0;
       for (final vehicle in _seedVehicles) {
         final ref = secondaryFirestore.collection(FirestorePaths.vehicles).doc(vehicle.id);
         final snap = await ref.get();
-        if (!snap.exists) {
-          batch.set(ref, _vehicleToMap(vehicle));
+        if (snap.exists) continue;
+        try {
+          await ref.set(_vehicleToMap(vehicle));
           createdVehicles++;
+        } on FirebaseException catch (error) {
+          debugPrint('Seed secundario: falha ao criar ${vehicle.id}: ${error.message}');
         }
       }
       if (createdVehicles > 0) {
-        await batch.commit();
-        debugPrint('Seed Firebase: $createdVehicles veiculo(s) de teste criado(s).');
+        debugPrint('Seed Firebase (secundario): $createdVehicles veiculo(s) de teste criado(s).');
       }
     } catch (error, stackTrace) {
-      debugPrint('Seed Firebase: $error\n$stackTrace');
+      debugPrint('Seed Firebase (secundario): $error\n$stackTrace');
+    } finally {
+      await secondaryApp.delete();
+    }
+  }
+
+  /// Garante perfil admin no Firestore, remove duplicatas e cria veiculos seed
+  /// usando a sessao primaria (admin ja autenticado).
+  Future<String?> _ensureAdminFleetReady() async {
+    final firebaseUser = _auth.currentUser;
+    if (firebaseUser == null) return null;
+
+    final email = firebaseUser.email?.trim().toLowerCase() ?? '';
+    if (!_isSeedEmail(email) && _cachedUser?.role != UserRole.admin) return null;
+
+    if (_cachedUser?.role != UserRole.admin) {
+      final loaded = await _loadAppUser(firebaseUser.uid, preferServer: true);
+      if (loaded?.role != UserRole.admin) return null;
+      _cachedUser = loaded;
+    }
+
+    await _repairSeedUserProfile(firebaseUser.uid, email.isNotEmpty ? email : AppSeedData.adminEmail);
+    await _deduplicateSeedUsersAsAdmin();
+    await _ensureSeedUserProfilesAsAdmin();
+    await _ensureSeedVehiclesWithPrimarySession();
+
+    final adminDoc = await _firestore
+        .collection(FirestorePaths.users)
+        .doc(firebaseUser.uid)
+        .get(const GetOptions(source: Source.server));
+    if (!adminDoc.exists || adminDoc.data()?['role'] != UserRole.admin.name) {
+      return 'Nao foi possivel sincronizar o perfil admin. Tente sair e entrar de novo.';
+    }
+
+    return null;
+  }
+
+  Future<void> _ensureSeedVehiclesWithPrimarySession() async {
+    var created = 0;
+    for (final vehicle in _seedVehicles) {
+      final ref = _firestore.collection(FirestorePaths.vehicles).doc(vehicle.id);
+      final snap = await ref.get();
+      if (snap.exists) continue;
+      try {
+        await ref.set(_vehicleToMap(vehicle));
+        created++;
+      } on FirebaseException catch (error) {
+        debugPrint('Seed primario: falha ao criar ${vehicle.id}: ${error.message}');
+      }
+    }
+    if (created > 0) {
+      debugPrint('Seed primario: $created veiculo(s) de teste criado(s).');
+    }
+  }
+
+  Future<void> _ensureSeedUserProfilesAsAdmin() async {
+    final secondaryApp = await _createSecondaryApp();
+    try {
+      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+      for (final seed in _seedUsers) {
+        final normalizedEmail = seed.email.trim().toLowerCase();
+        String uid;
+        try {
+          final credential = await secondaryAuth.signInWithEmailAndPassword(
+            email: normalizedEmail,
+            password: seed.password,
+          );
+          uid = credential.user!.uid;
+        } catch (error) {
+          debugPrint('Seed perfis: nao foi possivel obter uid de $normalizedEmail: $error');
+          continue;
+        }
+
+        final ref = _firestore.collection(FirestorePaths.users).doc(uid);
+        final existing = await ref.get();
+        if (existing.exists) continue;
+
+        try {
+          await ref.set({
+            'name': seed.name,
+            'email': normalizedEmail,
+            'role': seed.role.name,
+          });
+          debugPrint('Seed perfis: criado perfil Firestore para $normalizedEmail');
+        } on FirebaseException catch (error) {
+          debugPrint('Seed perfis: falha ao criar $normalizedEmail: ${error.message}');
+        }
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Seed perfis: $error\n$stackTrace');
+    } finally {
+      await secondaryApp.delete();
+    }
+  }
+
+  Future<void> _deduplicateSeedUsersAsAdmin() async {
+    final snapshot = await _firestore.collection(FirestorePaths.users).get();
+    final byEmail = <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
+    for (final doc in snapshot.docs) {
+      final email = (doc.data()['email'] as String?)?.trim().toLowerCase();
+      if (email == null || !_isSeedEmail(email)) continue;
+      byEmail.putIfAbsent(email, () => []).add(doc);
+    }
+
+    final secondaryApp = await _createSecondaryApp();
+    try {
+      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+      for (final entry in byEmail.entries) {
+        if (entry.value.length <= 1) continue;
+
+        final seed = _seedUsers.firstWhere((item) => item.email.trim().toLowerCase() == entry.key);
+        String? canonicalUid;
+        try {
+          final credential = await secondaryAuth.signInWithEmailAndPassword(
+            email: entry.key,
+            password: seed.password,
+          );
+          canonicalUid = credential.user!.uid;
+        } catch (error) {
+          debugPrint('Dedup usuarios: uid canonico indisponivel para ${entry.key}: $error');
+          continue;
+        }
+
+        for (final doc in entry.value) {
+          if (doc.id == canonicalUid) continue;
+          try {
+            await doc.reference.delete();
+            debugPrint('Dedup usuarios: removido doc duplicado ${doc.id} (${entry.key})');
+          } on FirebaseException catch (error) {
+            debugPrint('Dedup usuarios: falha ao remover ${doc.id}: ${error.message}');
+          }
+        }
+
+        await _firestore.collection(FirestorePaths.users).doc(canonicalUid).set({
+          'name': seed.name,
+          'email': entry.key,
+          'role': seed.role.name,
+        }, SetOptions(merge: true));
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Dedup usuarios: $error\n$stackTrace');
     } finally {
       await secondaryApp.delete();
     }
@@ -1146,14 +1346,17 @@ class FirebaseVehicleRepository implements VehicleRepository {
         ? normalizedEmail
         : firebaseUser.email?.trim().toLowerCase() ?? '';
 
-    var profile = await _loadAppUser(uid);
+    if (_isSeedEmail(email)) {
+      await _repairSeedUserProfile(uid, email);
+    }
+
+    var profile = await _loadAppUser(uid, preferServer: true);
     if (profile != null) return profile;
 
     if (!_isSeedEmail(email)) return null;
 
-    await _repairSeedUserProfile(uid, email);
-    profile = await _loadAppUser(uid);
-    if (profile != null) return profile;
+    final seed = _seedUsers.where((item) => item.email.trim().toLowerCase() == email).firstOrNull;
+    if (seed?.role == UserRole.admin) return null;
 
     return _appUserFromSeed(uid, email);
   }
@@ -1170,18 +1373,28 @@ class FirebaseVehicleRepository implements VehicleRepository {
     );
   }
 
-  Future<void> _repairSeedUserProfile(String uid, String normalizedEmail) async {
+  Future<bool> _repairSeedUserProfile(String uid, String normalizedEmail) async {
     final seed = _seedUsers.where((item) => item.email.trim().toLowerCase() == normalizedEmail).firstOrNull;
-    if (seed == null) return;
+    if (seed == null) return false;
+
+    final ref = _firestore.collection(FirestorePaths.users).doc(uid);
+    final data = {
+      'name': seed.name,
+      'email': seed.email.trim().toLowerCase(),
+      'role': seed.role.name,
+    };
 
     try {
-      await _firestore.collection(FirestorePaths.users).doc(uid).set({
-        'name': seed.name,
-        'email': seed.email.trim().toLowerCase(),
-        'role': seed.role.name,
-      }, SetOptions(merge: true));
+      final snap = await ref.get(const GetOptions(source: Source.server));
+      if (!snap.exists) {
+        await ref.set(data);
+      } else {
+        await ref.update(data);
+      }
+      return true;
     } on FirebaseException catch (error) {
       debugPrint('Falha ao reparar perfil do usuario seed: ${error.message}');
+      return false;
     }
   }
 
@@ -1204,18 +1417,20 @@ class FirebaseVehicleRepository implements VehicleRepository {
     );
   }
 
-  Future<AppUser?> _loadAppUser(String uid) async {
-    try {
-      final cached = await _firestore
-          .collection(FirestorePaths.users)
-          .doc(uid)
-          .get(const GetOptions(source: Source.cache))
-          .timeout(const Duration(seconds: 2));
-      if (cached.exists) {
-        return _userFromDoc(cached);
+  Future<AppUser?> _loadAppUser(String uid, {bool preferServer = false}) async {
+    if (!preferServer) {
+      try {
+        final cached = await _firestore
+            .collection(FirestorePaths.users)
+            .doc(uid)
+            .get(const GetOptions(source: Source.cache))
+            .timeout(const Duration(seconds: 2));
+        if (cached.exists) {
+          return _userFromDoc(cached);
+        }
+      } catch (error) {
+        debugPrint('loadAppUser cache: $error');
       }
-    } catch (error) {
-      debugPrint('loadAppUser cache: $error');
     }
 
     try {
