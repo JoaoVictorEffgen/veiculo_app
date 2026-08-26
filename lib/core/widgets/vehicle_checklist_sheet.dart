@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:signature/signature.dart';
 
@@ -57,6 +58,25 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
     super.dispose();
   }
 
+  Future<Uint8List?> _captureSignatureBytes() async {
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    try {
+      final bytes = await _signatureController.toPngBytes(width: 360, height: 160);
+      if (bytes != null && bytes.isNotEmpty) return bytes;
+    } on PlatformException catch (error) {
+      debugPrint('Assinatura toPngBytes: $error');
+    } catch (error) {
+      debugPrint('Assinatura toPngBytes: $error');
+    }
+
+    try {
+      return await _signatureController.toPngBytes();
+    } catch (error) {
+      debugPrint('Assinatura fallback toPngBytes: $error');
+      return null;
+    }
+  }
+
   Future<void> _submit() async {
     if (_saving) return;
 
@@ -67,11 +87,13 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
       return;
     }
 
-    final signatureBytes = await _signatureController.toPngBytes();
+    final signatureBytes = await _captureSignatureBytes();
     if (signatureBytes == null || signatureBytes.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nao foi possivel capturar a assinatura.')),
+        const SnackBar(
+          content: Text('Nao foi possivel capturar a assinatura. Limpe e assine novamente.'),
+        ),
       );
       return;
     }
@@ -79,39 +101,48 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
     setState(() => _saving = true);
     final signatureBase64 = base64Encode(signatureBytes);
 
-    final error = await ref.read(repositoryProvider).saveVehicleChecklist(
-          widget.driver,
-          widget.vehicle,
-          items: _items,
-          notes: _notesController.text,
-          signatureBase64: signatureBase64,
-        );
+    try {
+      final error = await ref.read(repositoryProvider).saveVehicleChecklist(
+            widget.driver,
+            widget.vehicle,
+            items: _items,
+            notes: _notesController.text,
+            signatureBase64: signatureBase64,
+          );
 
-    if (!mounted) return;
-    setState(() => _saving = false);
+      if (!mounted) return;
+      setState(() => _saving = false);
 
-    if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
-      return;
-    }
+      if (error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+        return;
+      }
 
-    final saved = VehicleChecklist(
-      id: vehicleChecklistDocId(driverId: widget.driver.id, vehicleId: widget.vehicle.id),
-      driverId: widget.driver.id,
-      driverName: widget.driver.name,
-      vehicleId: widget.vehicle.id,
-      vehicleName: widget.vehicle.name,
-      vehiclePlate: widget.vehicle.plate,
-      vehicleModel: widget.vehicle.model,
-      checklistDate: checklistDateKey(),
-      items: Map<String, bool>.from(_items),
-      completedAt: DateTime.now(),
-      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-      signatureBase64: signatureBase64,
-    );
+      final freshDriver = ref.read(authControllerProvider).user ?? widget.driver;
+      final saved = VehicleChecklist(
+        id: vehicleChecklistDocId(driverId: freshDriver.id, vehicleId: widget.vehicle.id),
+        driverId: freshDriver.id,
+        driverName: freshDriver.name,
+        vehicleId: widget.vehicle.id,
+        vehicleName: widget.vehicle.name,
+        vehiclePlate: widget.vehicle.plate,
+        vehicleModel: widget.vehicle.model,
+        checklistDate: checklistDateKey(),
+        items: Map<String, bool>.from(_items),
+        completedAt: DateTime.now(),
+        notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+        signatureBase64: signatureBase64,
+      );
 
     await _showPdfActions(saved);
     if (mounted) Navigator.pop(context, saved);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro inesperado ao salvar checklist: $error')),
+      );
+    }
   }
 
   Future<void> _showPdfActions(VehicleChecklist checklist) async {

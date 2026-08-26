@@ -33,26 +33,33 @@ class FirebaseVehicleRepository implements VehicleRepository {
   AppUser? get currentUser => _cachedUser;
 
   @override
-  Stream<AppUser?> get authStateChanges async* {
-    await for (final firebaseUser in _auth.authStateChanges()) {
+  Stream<AppUser?> get authStateChanges {
+    return _auth.authStateChanges().asyncExpand((firebaseUser) {
       if (firebaseUser == null) {
         _cachedUser = null;
-        yield null;
-        continue;
+        return Stream.value(null);
       }
 
-      if (_cachedUser?.id == firebaseUser.uid) {
-        yield _cachedUser;
-      }
+      final email = firebaseUser.email?.trim().toLowerCase() ?? '';
+      return _firestore.collection(FirestorePaths.users).doc(firebaseUser.uid).snapshots().asyncMap((doc) async {
+        if (doc.exists) {
+          _cachedUser = _userFromDoc(doc);
+          return _cachedUser;
+        }
 
-      final loaded = await _ensureUserProfile(firebaseUser, firebaseUser.email?.trim().toLowerCase() ?? '');
-      _cachedUser = loaded;
-      if (loaded?.role == UserRole.admin) {
-        unawaited(_ensureAdminFleetReady());
-      }
-      yield loaded;
-      continue;
-    }
+        if (_isSeedEmail(email)) {
+          await _repairSeedUserProfile(firebaseUser.uid, email);
+          final repaired = await _loadAppUser(firebaseUser.uid, preferServer: true);
+          if (repaired != null) {
+            _cachedUser = repaired;
+            return repaired;
+          }
+        }
+
+        _cachedUser = _appUserFromSeed(firebaseUser.uid, email);
+        return _cachedUser;
+      });
+    });
   }
 
   @override
@@ -524,36 +531,33 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final itemMap = {for (final item in VehicleChecklistConfig.items) item.id: items[item.id] == true};
 
     try {
-      await _firestore.runTransaction((transaction) async {
-        final existing = await transaction.get(docRef);
-        if (existing.exists) throw StateError('already-exists');
-        transaction.set(docRef, {
-          'driverId': driver.id,
-          'driverName': driver.name,
-          'vehicleId': vehicle.id,
-          'vehicleName': vehicle.name,
-          'vehiclePlate': vehicle.plate,
-          'vehicleModel': vehicle.model,
-          'checklistDate': checklistDateKey(),
-          'items': itemMap,
-          if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
-          'signatureBase64': signatureBase64.trim(),
-          'completedAt': FieldValue.serverTimestamp(),
-        });
+      final existing = await docRef.get(const GetOptions(source: Source.server));
+      if (existing.exists) {
+        return 'Checklist deste veiculo ja foi feito hoje.';
+      }
+
+      final profile = await _loadAppUser(authUser.uid, preferServer: true);
+      final driverName = profile?.name ?? driver.name;
+
+      await docRef.set({
+        'driverId': driver.id,
+        'driverName': driverName,
+        'vehicleId': vehicle.id,
+        'vehicleName': vehicle.name,
+        'vehiclePlate': vehicle.plate,
+        'vehicleModel': vehicle.model,
+        'checklistDate': checklistDateKey(),
+        'items': itemMap,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        'signatureBase64': signatureBase64.trim(),
+        'completedAt': FieldValue.serverTimestamp(),
       });
       return null;
-    } on StateError catch (error) {
-      if (error.message == 'already-exists') {
-        return 'Checklist deste veiculo ja foi feito hoje.';
-      }
-      rethrow;
     } on FirebaseException catch (error) {
-      if (error.code == 'already-exists') {
-        return 'Checklist deste veiculo ja foi feito hoje.';
-      }
-      return error.message ?? 'Erro ao salvar checklist.';
+      return _friendlyFirestoreError(error, 'salvar checklist');
     } catch (error) {
-      return 'Erro ao salvar checklist: $error';
+      debugPrint('saveVehicleChecklist: $error');
+      return 'Erro ao salvar checklist. Verifique a conexao e tente novamente.';
     }
   }
 
@@ -823,7 +827,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
     List<int> bytes,
     String fileName,
   ) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem anexar planos.';
+    final accessError = await _requireFirestoreAdmin(actor);
+    if (accessError != null) return accessError;
+
     if (bytes.isEmpty) return 'Arquivo vazio.';
     if (bytes.length > VehicleMaintenancePlanLimits.maxFileSizeBytes) {
       return 'Arquivo muito grande. Maximo ${VehicleMaintenancePlanLimits.maxFileSizeBytes ~/ (1024 * 1024)} MB.';
@@ -857,15 +863,18 @@ class FirebaseVehicleRepository implements VehicleRepository {
       });
       return null;
     } on FirebaseException catch (error) {
-      return error.message ?? 'Erro ao anexar plano de manutencao.';
+      return _friendlyFirestoreError(error, 'anexar plano de manutencao');
     } catch (error) {
-      return 'Erro ao anexar plano de manutencao: $error';
+      debugPrint('uploadMaintenancePlan: $error');
+      return 'Erro ao anexar plano de manutencao. Tente um PDF menor ou verifique a conexao.';
     }
   }
 
   @override
   Future<String?> removeMaintenancePlan(AppUser actor, String vehicleId) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem remover planos.';
+    final accessError = await _requireFirestoreAdmin(actor);
+    if (accessError != null) return accessError;
+
     try {
       await _deleteMaintenanceChunks(vehicleId);
       await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).update({
@@ -876,7 +885,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       });
       return null;
     } on FirebaseException catch (error) {
-      return error.message ?? 'Erro ao remover plano de manutencao.';
+      return _friendlyFirestoreError(error, 'remover plano de manutencao');
     }
   }
 
@@ -921,7 +930,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
     DateTime? lastServiceDate,
     String? lastServiceNotes,
   }) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar manutencao.';
+    final accessError = await _requireFirestoreAdmin(actor);
+    if (accessError != null) return accessError;
+
     try {
       final update = <String, dynamic>{};
       if (odometerKm != null) update['odometerKm'] = double.parse(odometerKm.toStringAsFixed(1));
@@ -934,7 +945,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).update(update);
       return null;
     } on FirebaseException catch (error) {
-      return error.message ?? 'Erro ao salvar manutencao.';
+      return _friendlyFirestoreError(error, 'salvar manutencao');
     }
   }
 
@@ -948,7 +959,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
     String? notes,
     double? cost,
   }) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem registrar servicos.';
+    final accessError = await _requireFirestoreAdmin(actor);
+    if (accessError != null) return accessError;
+
     final type = serviceType.trim();
     if (type.isEmpty) return 'Informe o tipo de servico.';
 
@@ -1051,15 +1064,23 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, String? password}) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
+    final accessError = await _requireFirestoreAdmin(actor);
+    if (accessError != null) return accessError;
+
     try {
       await _firestore.collection(FirestorePaths.users).doc(driverId).update({
         'name': name.trim(),
         'email': email.trim().toLowerCase(),
       });
+
+      if (_cachedUser?.id == driverId) {
+        final doc = await _firestore.collection(FirestorePaths.users).doc(driverId).get(const GetOptions(source: Source.server));
+        if (doc.exists) _cachedUser = _userFromDoc(doc);
+      }
+
       return null;
     } on FirebaseException catch (error) {
-      return error.message;
+      return _friendlyFirestoreError(error, 'atualizar motorista');
     }
   }
 

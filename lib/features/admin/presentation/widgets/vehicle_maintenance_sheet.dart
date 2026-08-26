@@ -176,7 +176,7 @@ class _VehicleMaintenanceSheetState extends ConsumerState<VehicleMaintenanceShee
 
     final error = await runWithBlockingLoadingDialog<String?>(
       context,
-      message: 'Enviando plano PDF...',
+      message: 'Enviando plano de manutencao...',
       action: () => ref.read(adminControllerProvider.notifier).uploadMaintenancePlan(
             widget.admin,
             widget.vehicle.id,
