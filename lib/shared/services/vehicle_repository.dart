@@ -4,6 +4,8 @@ import '../models/app_models.dart';
 
 abstract class VehicleRepository {
   AppUser? get currentUser;
+  bool get hasPersistedAuthSession;
+  Future<AppUser?> restoreSessionIfNeeded();
   Stream<AppUser?> get authStateChanges;
 
   Future<String?> login(String email, String password);

@@ -37,19 +37,69 @@ class FirebaseVehicleRepository implements VehicleRepository {
   @override
   AppUser? get currentUser => _cachedUser;
 
+  @override
+  bool get hasPersistedAuthSession => _auth.currentUser != null;
+
+  @override
+  Future<AppUser?> restoreSessionIfNeeded() async {
+    final firebaseUser = _auth.currentUser;
+    if (firebaseUser == null) {
+      _cachedUser = null;
+      return null;
+    }
+
+    if (_cachedUser?.id == firebaseUser.uid) return _cachedUser;
+
+    final email = firebaseUser.email?.trim().toLowerCase() ?? '';
+    final seed = _appUserFromSeed(firebaseUser.uid, email);
+    if (seed != null) {
+      _cachedUser = seed;
+      return seed;
+    }
+
+    try {
+      final profile = await _loadAppUser(firebaseUser.uid);
+      if (profile != null) {
+        _cachedUser = profile;
+        return profile;
+      }
+    } catch (error) {
+      debugPrint('restoreSessionIfNeeded: $error');
+    }
+
+    return _cachedUser;
+  }
+
   Stream<List<T>> _signedInQueryStream<T>({
     required String debugLabel,
     required Stream<List<T>> Function() build,
+    bool emitInitialEmpty = false,
   }) {
-    if (_auth.currentUser == null) return Stream.value(const []);
-    return build().transform(
+    return _auth.authStateChanges().asyncExpand((authUser) {
+      if (authUser == null) return Stream.value(const []);
+      final stream = build();
+      if (emitInitialEmpty) return _streamWithInitial(List<T>.empty(), stream);
+      return stream;
+    }).transform(
       StreamTransformer<List<T>, List<T>>.fromHandlers(
         handleError: (error, stackTrace, sink) {
           debugPrint('$debugLabel: $error');
-          sink.add(const []);
+          sink.addError(error, stackTrace);
         },
       ),
     );
+  }
+
+  Stream<T> _streamWithInitial<T>(T initial, Stream<T> source) {
+    return Stream.multi((controller) {
+      controller.add(initial);
+      final subscription = source.listen(
+        controller.add,
+        onError: controller.addError,
+        onDone: controller.close,
+      );
+      controller.onCancel = subscription.cancel;
+    });
   }
 
   @override
@@ -69,7 +119,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
             _cachedUser = _userFromDoc(doc);
             return _cachedUser!;
           }
-          final fallback = _appUserFromSeed(uid, email);
+          final fallback = _appUserFromSeed(uid, email) ?? _cachedUser;
           if (fallback != null) _cachedUser = fallback;
           return _cachedUser;
         }).transform(
@@ -93,7 +143,12 @@ class FirebaseVehicleRepository implements VehicleRepository {
         return Stream.value(seedFallback).asyncExpand((_) => listenProfile());
       }
 
-      return listenProfile();
+      return Stream.fromFuture(restoreSessionIfNeeded()).asyncExpand((restored) {
+        if (restored != null) {
+          return Stream.value(restored).asyncExpand((_) => listenProfile());
+        }
+        return listenProfile();
+      });
     });
   }
 
@@ -550,12 +605,16 @@ class FirebaseVehicleRepository implements VehicleRepository {
   Stream<List<VehicleChecklist>> watchTodayChecklistsForDriver(AppUser driver) {
     if (!driver.mustCompleteVehicleChecklist) return Stream.value(const <VehicleChecklist>[]);
 
-    return _firestore
-        .collection(FirestorePaths.vehicleChecklists)
-        .where('driverId', isEqualTo: driver.id)
-        .where('checklistDate', isEqualTo: checklistDateKey())
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map(_checklistFromDoc).toList());
+    return _signedInQueryStream(
+      debugLabel: 'watchTodayChecklistsForDriver',
+      emitInitialEmpty: true,
+      build: () => _firestore
+          .collection(FirestorePaths.vehicleChecklists)
+          .where('driverId', isEqualTo: driver.id)
+          .where('checklistDate', isEqualTo: checklistDateKey())
+          .snapshots()
+          .map((snapshot) => snapshot.docs.map(_checklistFromDoc).toList()),
+    );
   }
 
   @override
@@ -618,15 +677,17 @@ class FirebaseVehicleRepository implements VehicleRepository {
   Stream<List<VehicleChecklist>> watchVehicleChecklists(AppUser user) {
     return _signedInQueryStream(
       debugLabel: 'watchVehicleChecklists',
+      emitInitialEmpty: true,
       build: () {
         final query = user.role == UserRole.admin
-            ? _firestore.collection(FirestorePaths.vehicleChecklists).orderBy('completedAt', descending: true)
-            : _firestore
-                .collection(FirestorePaths.vehicleChecklists)
-                .where('driverId', isEqualTo: user.id)
-                .orderBy('completedAt', descending: true);
+            ? _firestore.collection(FirestorePaths.vehicleChecklists)
+            : _firestore.collection(FirestorePaths.vehicleChecklists).where('driverId', isEqualTo: user.id);
 
-        return query.snapshots().map((snapshot) => snapshot.docs.map(_checklistFromDoc).toList());
+        return query.snapshots().map((snapshot) {
+          final checklists = snapshot.docs.map(_checklistFromDoc).toList()
+            ..sort((a, b) => b.completedAt.compareTo(a.completedAt));
+          return checklists;
+        });
       },
     );
   }

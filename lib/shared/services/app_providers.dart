@@ -43,17 +43,26 @@ class AuthController extends StateNotifier<AuthSession> {
         state = AuthSession.ready(_repository.currentUser);
       },
     );
-    _bootstrapTimer = Timer(const Duration(seconds: 4), () {
-      if (!state.isReady) {
-        debugPrint('Timeout de autenticacao — liberando app com sessao em cache.');
-        state = AuthSession.ready(_repository.currentUser);
-      }
+    _bootstrapTimer = Timer(const Duration(seconds: 10), () {
+      unawaited(_finishBootstrap());
     });
   }
 
   final VehicleRepository _repository;
   StreamSubscription<AppUser?>? _subscription;
   Timer? _bootstrapTimer;
+
+  Future<void> _finishBootstrap() async {
+    if (state.isReady) return;
+
+    if (_repository.hasPersistedAuthSession) {
+      final user = await _repository.restoreSessionIfNeeded();
+      state = AuthSession.ready(user);
+      return;
+    }
+
+    state = AuthSession.ready(_repository.currentUser);
+  }
 
   AppUser? get user => state.user;
 
