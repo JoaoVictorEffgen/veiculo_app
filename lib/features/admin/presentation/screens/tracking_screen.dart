@@ -107,7 +107,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
 
     return AdminOnlyGate(
       child: Scaffold(
-        appBar: const CorporateAppBar(title: 'Mapa GPS', showFleetRefresh: true),
+        appBar: const CorporateAppBar(title: 'Mapa GPS'),
         body: tracksAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => Center(child: Text('Erro ao carregar GPS: $error')),

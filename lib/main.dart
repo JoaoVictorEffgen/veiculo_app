@@ -27,12 +27,19 @@ Future<void> main() async {
   };
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  try {
-    await FirebaseFirestore.instance.clearPersistence();
-  } catch (error) {
-    debugPrint('Firestore clearPersistence: $error');
+  if (kIsWeb) {
+    try {
+      await FirebaseFirestore.instance.clearPersistence();
+    } catch (error) {
+      debugPrint('Firestore clearPersistence: $error');
+    }
+    FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);
+  } else {
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: true,
+      cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    );
   }
-  FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   final repository = FirebaseVehicleRepository();
@@ -50,13 +57,8 @@ Future<void> main() async {
   );
 
   unawaited(
-    Future<void>.delayed(const Duration(seconds: 8), () async {
-      if (repository.currentUser != null || repository.hasPersistedAuthSession) return;
-      try {
-        await repository.ensureSeedData().timeout(const Duration(seconds: 45));
-      } catch (error) {
-        debugPrint('Seed Firebase: $error');
-      }
+    repository.ensureSeedData().timeout(const Duration(seconds: 30)).catchError((Object error) {
+      debugPrint('Seed Firebase: $error');
     }),
   );
 }

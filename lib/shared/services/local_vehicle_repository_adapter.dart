@@ -30,12 +30,6 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   AppUser? get currentUser => _local.currentUser;
 
   @override
-  bool get hasPersistedAuthSession => _local.currentUser != null;
-
-  @override
-  Future<AppUser?> restoreSessionIfNeeded() async => _local.currentUser;
-
-  @override
   Stream<AppUser?> get authStateChanges async* {
     yield _local.currentUser;
     yield* _authController.stream;
@@ -132,10 +126,6 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
 
   @override
   Stream<List<DriverIssueReport>> watchDriverIssueReports(AppUser user) => Stream.value(const []);
-
-  @override
-  Future<String?> replyToDriverIssueReport(AppUser admin, String reportId, String reply) async =>
-      'Disponivel apenas com Firebase.';
 
   @override
   Future<void> saveFcmToken(AppUser user, String token) async {}
