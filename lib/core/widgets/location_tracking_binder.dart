@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vehicle_control_app/shared/services/app_providers.dart';
@@ -13,34 +15,41 @@ class LocationTrackingBinder extends ConsumerStatefulWidget {
 }
 
 class _LocationTrackingBinderState extends ConsumerState<LocationTrackingBinder> with WidgetsBindingObserver {
+  Timer? _syncDebounce;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _sync());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleSync());
   }
 
   @override
   void dispose() {
+    _syncDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed ||
-        state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden) {
-      _sync();
+    if (state == AppLifecycleState.resumed) {
+      _scheduleSync();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(authControllerProvider, (_, __) => _sync());
-    ref.listen(vehicleControllerProvider, (_, __) => _sync());
+    ref.listen(authControllerProvider, (_, __) => _scheduleSync());
+    ref.listen(vehicleControllerProvider, (_, __) => _scheduleSync());
     return widget.child;
+  }
+
+  void _scheduleSync() {
+    _syncDebounce?.cancel();
+    _syncDebounce = Timer(const Duration(milliseconds: 400), () {
+      unawaited(_sync());
+    });
   }
 
   Future<void> _sync() async {

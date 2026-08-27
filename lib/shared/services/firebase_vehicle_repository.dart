@@ -70,35 +70,14 @@ class FirebaseVehicleRepository implements VehicleRepository {
     return _cachedUser;
   }
 
-  Stream<List<T>> _signedInQueryStream<T>({
+  Stream<List<T>> _liveQueryStream<T>({
     required String debugLabel,
     required Stream<List<T>> Function() build,
-    bool emitInitialEmpty = false,
   }) {
-    return _auth.authStateChanges().asyncExpand((authUser) {
-      if (authUser == null) return Stream.value(const []);
-      final stream = build();
-      if (emitInitialEmpty) return _streamWithInitial(List<T>.empty(), stream);
-      return stream;
-    }).transform(
-      StreamTransformer<List<T>, List<T>>.fromHandlers(
-        handleError: (error, stackTrace, sink) {
-          debugPrint('$debugLabel: $error');
-          sink.addError(error, stackTrace);
-        },
-      ),
-    );
-  }
-
-  Stream<T> _streamWithInitial<T>(T initial, Stream<T> source) {
-    return Stream.multi((controller) {
-      controller.add(initial);
-      final subscription = source.listen(
-        controller.add,
-        onError: controller.addError,
-        onDone: controller.close,
-      );
-      controller.onCancel = subscription.cancel;
+    if (_auth.currentUser == null) return Stream.value(const []);
+    return build().handleError((Object error, StackTrace stackTrace) {
+      debugPrint('$debugLabel: $error');
+      throw error;
     });
   }
 
@@ -248,7 +227,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<Vehicle>> watchVehicles() {
-    return _signedInQueryStream(
+    return _liveQueryStream(
       debugLabel: 'watchVehicles',
       build: () => _firestore.collection(FirestorePaths.vehicles).orderBy('name').snapshots().map(
             (snapshot) => snapshot.docs.map(_vehicleFromDoc).toList(),
@@ -265,7 +244,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<Movement>> watchMovements() {
-    return _signedInQueryStream(
+    return _liveQueryStream(
       debugLabel: 'watchMovements',
       build: () {
         final authUser = _auth.currentUser!;
@@ -282,7 +261,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<AppUser>> watchUsers() {
-    return _signedInQueryStream(
+    return _liveQueryStream(
       debugLabel: 'watchUsers',
       build: () {
         if (_isAdminSession) {
@@ -300,7 +279,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<DriverTrack>> watchDriverTracks() {
-    return _signedInQueryStream(
+    return _liveQueryStream(
       debugLabel: 'watchDriverTracks',
       build: () {
         if (_isAdminSession) {
@@ -318,7 +297,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<FleetAnnouncement>> watchAnnouncementsForUser(AppUser user) {
-    return _signedInQueryStream(
+    return _liveQueryStream(
       debugLabel: 'watchAnnouncements',
       build: () => _firestore
           .collection(FirestorePaths.announcements)
@@ -470,7 +449,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<FleetAdminAlert>> watchAdminAlerts() {
-    return _signedInQueryStream(
+    return _liveQueryStream(
       debugLabel: 'watchAdminAlerts',
       build: () => _firestore
           .collection(FirestorePaths.adminAlerts)
@@ -529,7 +508,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<DriverIssueReport>> watchDriverIssueReports(AppUser user) {
-    return _signedInQueryStream(
+    return _liveQueryStream(
       debugLabel: 'watchDriverIssueReports',
       build: () {
         final query = user.role == UserRole.admin
@@ -586,14 +565,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
 
     try {
-      final cached = await docRef
-          .get(const GetOptions(source: Source.cache))
-          .timeout(const Duration(milliseconds: 400));
-      if (cached.exists) return _checklistFromDoc(cached);
-    } catch (_) {}
-
-    try {
-      final remote = await docRef.get().timeout(const Duration(seconds: 4));
+      final remote = await docRef
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 4));
       if (remote.exists) return _checklistFromDoc(remote);
     } catch (error) {
       debugPrint('getTodayChecklist: $error');
@@ -605,9 +579,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
   Stream<List<VehicleChecklist>> watchTodayChecklistsForDriver(AppUser driver) {
     if (!driver.mustCompleteVehicleChecklist) return Stream.value(const <VehicleChecklist>[]);
 
-    return _signedInQueryStream(
+    return _liveQueryStream(
       debugLabel: 'watchTodayChecklistsForDriver',
-      emitInitialEmpty: true,
       build: () => _firestore
           .collection(FirestorePaths.vehicleChecklists)
           .where('driverId', isEqualTo: driver.id)
@@ -675,9 +648,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Stream<List<VehicleChecklist>> watchVehicleChecklists(AppUser user) {
-    return _signedInQueryStream(
+    return _liveQueryStream(
       debugLabel: 'watchVehicleChecklists',
-      emitInitialEmpty: true,
       build: () {
         final query = user.role == UserRole.admin
             ? _firestore.collection(FirestorePaths.vehicleChecklists)
@@ -1355,21 +1327,6 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   Future<AppUser?> _loadAppUser(String uid) async {
-    if (!kIsWeb) {
-      try {
-        final cached = await _firestore
-            .collection(FirestorePaths.users)
-            .doc(uid)
-            .get(const GetOptions(source: Source.cache))
-            .timeout(const Duration(seconds: 2));
-        if (cached.exists) {
-          return _userFromDoc(cached);
-        }
-      } catch (error) {
-        debugPrint('loadAppUser cache: $error');
-      }
-    }
-
     try {
       final remote = await _firestore
           .collection(FirestorePaths.users)

@@ -89,7 +89,24 @@ final authControllerProvider = StateNotifierProvider<AuthController, AuthSession
 });
 
 class VehicleController extends StateNotifier<List<Vehicle>> {
-  VehicleController(this._repository) : super(const []) {
+  VehicleController._(this._repository) : super(const []);
+
+  factory VehicleController.active(VehicleRepository repository) {
+    final controller = VehicleController._(repository);
+    controller._subscribe();
+    return controller;
+  }
+
+  factory VehicleController.idle(VehicleRepository repository) => VehicleController._(repository);
+
+  final VehicleRepository _repository;
+  StreamSubscription<List<Vehicle>>? _subscription;
+  bool _hasLoaded = false;
+
+  bool get hasLoaded => _hasLoaded;
+
+  void _subscribe() {
+    _subscription?.cancel();
     _subscription = _repository.watchVehicles().listen(
       (vehicles) {
         _hasLoaded = true;
@@ -102,14 +119,9 @@ class VehicleController extends StateNotifier<List<Vehicle>> {
     );
   }
 
-  final VehicleRepository _repository;
-  StreamSubscription<List<Vehicle>>? _subscription;
-  bool _hasLoaded = false;
-
-  bool get hasLoaded => _hasLoaded;
-
   Future<void> refresh() async {
     state = await _repository.fetchVehicles();
+    _hasLoaded = true;
   }
 
   Future<String?> start(String vehicleId, AppUser user) async {
@@ -139,7 +151,12 @@ class VehicleController extends StateNotifier<List<Vehicle>> {
 }
 
 final vehicleControllerProvider = StateNotifierProvider<VehicleController, List<Vehicle>>((ref) {
-  return VehicleController(ref.watch(repositoryProvider));
+  final session = ref.watch(authControllerProvider);
+  final repository = ref.watch(repositoryProvider);
+  if (!session.isReady || session.user == null) {
+    return VehicleController.idle(repository);
+  }
+  return VehicleController.active(repository);
 });
 
 class AdminController extends StateNotifier<int> {
@@ -262,14 +279,20 @@ final adminControllerProvider = StateNotifierProvider<AdminController, int>((ref
 });
 
 final movementsProvider = StreamProvider<List<Movement>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null) return Stream.value(const []);
   return ref.watch(repositoryProvider).watchMovements();
 });
 
 final usersProvider = StreamProvider<List<AppUser>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null) return Stream.value(const []);
   return ref.watch(repositoryProvider).watchUsers();
 });
 
 final rawDriverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null) return Stream.value(const []);
   return ref.watch(repositoryProvider).watchDriverTracks();
 });
 
