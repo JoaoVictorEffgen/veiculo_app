@@ -821,11 +821,13 @@ class FirebaseVehicleRepository implements VehicleRepository {
   Future<String?> editVehicle(AppUser actor, {required String vehicleId, required String name, required String model, required String plate}) async {
     if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
     try {
+      final trimmedName = name.trim();
       await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).update({
-        'name': name.trim(),
+        'name': trimmedName,
         'model': model.trim(),
         'plate': plate.trim().toUpperCase(),
       });
+      unawaited(_propagateVehicleNameChange(vehicleId: vehicleId, name: trimmedName));
       return null;
     } on FirebaseException catch (error) {
       return error.message;
@@ -1084,13 +1086,57 @@ class FirebaseVehicleRepository implements VehicleRepository {
   Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, String? password}) async {
     if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
     try {
+      final trimmedName = name.trim();
+      final normalizedEmail = email.trim().toLowerCase();
+
       await _firestore.collection(FirestorePaths.users).doc(driverId).update({
-        'name': name.trim(),
-        'email': email.trim().toLowerCase(),
+        'name': trimmedName,
+        'email': normalizedEmail,
       });
+
+      unawaited(_propagateDriverProfileChange(driverId: driverId, name: trimmedName));
+
+      if (_cachedUser?.id == driverId) {
+        _cachedUser = AppUser(
+          id: driverId,
+          name: trimmedName,
+          email: normalizedEmail,
+          password: '',
+          role: _cachedUser!.role,
+        );
+      }
+
       return null;
     } on FirebaseException catch (error) {
       return error.message;
+    }
+  }
+
+  Future<void> _propagateDriverProfileChange({required String driverId, required String name}) async {
+    try {
+      final vehicles = await _firestore.collection(FirestorePaths.vehicles).where('currentDriverId', isEqualTo: driverId).get();
+      for (final doc in vehicles.docs) {
+        await doc.reference.update({'currentDriverName': name});
+      }
+
+      final trackingRef = _firestore.collection(FirestorePaths.tracking).doc(driverId);
+      final trackingSnap = await trackingRef.get();
+      if (trackingSnap.exists) {
+        await trackingRef.update({'driverName': name});
+      }
+    } catch (error) {
+      debugPrint('Sync nome motorista: $error');
+    }
+  }
+
+  Future<void> _propagateVehicleNameChange({required String vehicleId, required String name}) async {
+    try {
+      final tracks = await _firestore.collection(FirestorePaths.tracking).where('vehicleId', isEqualTo: vehicleId).get();
+      for (final doc in tracks.docs) {
+        await doc.reference.update({'vehicleName': name});
+      }
+    } catch (error) {
+      debugPrint('Sync nome veiculo: $error');
     }
   }
 

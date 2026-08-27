@@ -267,12 +267,22 @@ final rawDriverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
 final driverTracksProvider = Provider<AsyncValue<List<DriverTrack>>>((ref) {
   final tracksAsync = ref.watch(rawDriverTracksProvider);
   final vehicles = ref.watch(vehicleControllerProvider);
+  final users = ref.watch(usersProvider).valueOrNull ?? const <AppUser>[];
   return tracksAsync.when(
-    data: (tracks) => AsyncValue.data(DriverTrackFilter.forMapDisplay(tracks, vehicles)),
+    data: (tracks) {
+      final enriched = DriverTrackFilter.withLiveNames(tracks: tracks, users: users, vehicles: vehicles);
+      return AsyncValue.data(DriverTrackFilter.forMapDisplay(enriched, vehicles));
+    },
     loading: () => const AsyncValue.loading(),
     error: (error, stackTrace) => AsyncValue.error(error, stackTrace),
   );
 });
+
+Future<void> refreshFleetSnapshot(WidgetRef ref) async {
+  await ref.read(vehicleControllerProvider.notifier).refresh();
+  ref.invalidate(usersProvider);
+  ref.invalidate(rawDriverTracksProvider);
+}
 
 final fleetAnnouncementsProvider = StreamProvider<List<FleetAnnouncement>>((ref) {
   final user = ref.watch(authControllerProvider).user;

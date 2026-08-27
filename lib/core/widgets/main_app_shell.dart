@@ -278,11 +278,13 @@ class CorporateAppBar extends ConsumerWidget implements PreferredSizeWidget {
     super.key,
     required this.title,
     this.showBack = false,
+    this.showFleetRefresh = false,
     this.actions,
   });
 
   final String title;
   final bool showBack;
+  final bool showFleetRefresh;
   final List<Widget>? actions;
 
   @override
@@ -290,6 +292,35 @@ class CorporateAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final defaultActions = <Widget>[
+      if (showFleetRefresh)
+        IconButton(
+          onPressed: () async {
+            await refreshFleetSnapshot(ref);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Dados atualizados.')),
+              );
+            }
+          },
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Atualizar',
+        ),
+      IconButton(
+        onPressed: () => context.go(AppRoutes.history),
+        icon: const Icon(Icons.history),
+        tooltip: 'Historico',
+      ),
+      IconButton(
+        onPressed: () async {
+          await ref.read(authControllerProvider.notifier).logout();
+          if (context.mounted) context.go(AppRoutes.login);
+        },
+        icon: const Icon(Icons.logout),
+        tooltip: 'Sair',
+      ),
+    ];
+
     return AppBar(
       leading: showBack
           ? IconButton(
@@ -298,22 +329,7 @@ class CorporateAppBar extends ConsumerWidget implements PreferredSizeWidget {
             )
           : null,
       title: Text(title.toUpperCase()),
-      actions: actions ??
-          [
-            IconButton(
-              onPressed: () => context.go(AppRoutes.history),
-              icon: const Icon(Icons.history),
-              tooltip: 'Historico',
-            ),
-            IconButton(
-              onPressed: () async {
-                await ref.read(authControllerProvider.notifier).logout();
-                if (context.mounted) context.go(AppRoutes.login);
-              },
-              icon: const Icon(Icons.logout),
-              tooltip: 'Sair',
-            ),
-          ],
+      actions: actions ?? defaultActions,
     );
   }
 }

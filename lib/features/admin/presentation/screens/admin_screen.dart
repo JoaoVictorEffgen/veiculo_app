@@ -35,7 +35,7 @@ class AdminScreen extends ConsumerWidget {
     final moving = vehicles.where((item) => item.status == VehicleStatus.moving).length;
 
     return Scaffold(
-      appBar: const CorporateAppBar(title: 'Menu administrativo'),
+      appBar: const CorporateAppBar(title: 'Menu administrativo', showFleetRefresh: true),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
         children: [
@@ -264,8 +264,13 @@ class AdminScreen extends ConsumerWidget {
     );
     if (values == null || !context.mounted) return;
     final error = await ref.read(adminControllerProvider.notifier).editVehicle(admin, vehicleId: vehicle.id, name: values[0], model: values[1], plate: values[2]);
-    ref.read(vehicleControllerProvider.notifier).refresh();
-    if (error != null && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    await refreshFleetSnapshot(ref);
+    if (!context.mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Veiculo atualizado.')));
+    }
   }
 
   Future<void> _deleteVehicle(BuildContext context, WidgetRef ref, AppUser admin, Vehicle vehicle) async {
@@ -389,7 +394,13 @@ class AdminScreen extends ConsumerWidget {
           email: values[1],
           password: values[2].isEmpty ? null : values[2],
         );
-    if (error != null && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    await refreshFleetSnapshot(ref);
+    if (!context.mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Motorista atualizado.')));
+    }
   }
 
   Future<void> _deleteDriver(BuildContext context, WidgetRef ref, AppUser admin, AppUser driver) async {
