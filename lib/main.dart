@@ -56,9 +56,4 @@ Future<void> main() async {
     ),
   );
 
-  unawaited(
-    repository.ensureSeedData().timeout(const Duration(seconds: 30)).catchError((Object error) {
-      debugPrint('Seed Firebase: $error');
-    }),
-  );
 }

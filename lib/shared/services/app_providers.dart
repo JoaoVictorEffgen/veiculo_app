@@ -43,12 +43,19 @@ class AuthController extends StateNotifier<AuthSession> {
         state = AuthSession.ready(_repository.currentUser);
       },
     );
-    _bootstrapTimer = Timer(const Duration(seconds: 8), () {
-      if (!state.isReady) {
-        debugPrint('Timeout de autenticacao — liberando app com sessao em cache.');
-        state = AuthSession.ready(_repository.currentUser);
-      }
+    _bootstrapTimer = Timer(const Duration(seconds: 10), () {
+      unawaited(_finishBootstrap());
     });
+  }
+
+  Future<void> _finishBootstrap() async {
+    if (state.isReady) return;
+    if (_repository.hasPersistedAuthSession) {
+      final user = await _repository.restoreSessionIfNeeded();
+      state = AuthSession.ready(user);
+      return;
+    }
+    state = AuthSession.ready(_repository.currentUser);
   }
 
   final VehicleRepository _repository;
@@ -57,7 +64,11 @@ class AuthController extends StateNotifier<AuthSession> {
 
   AppUser? get user => state.user;
 
-  Future<String?> login(String email, String password) => _repository.login(email, password);
+  Future<String?> login(String email, String password) async {
+    final error = await _repository.login(email, password);
+    state = AuthSession.ready(_repository.currentUser);
+    return error;
+  }
 
   Future<String?> sendPasswordResetEmail(String email) => _repository.sendPasswordResetEmail(email);
 
@@ -76,7 +87,24 @@ final authControllerProvider = StateNotifierProvider<AuthController, AuthSession
 });
 
 class VehicleController extends StateNotifier<List<Vehicle>> {
-  VehicleController(this._repository) : super(const []) {
+  VehicleController._(this._repository) : super(const []);
+
+  factory VehicleController.active(VehicleRepository repository) {
+    final controller = VehicleController._(repository);
+    controller._subscribe();
+    return controller;
+  }
+
+  factory VehicleController.idle(VehicleRepository repository) => VehicleController._(repository);
+
+  final VehicleRepository _repository;
+  StreamSubscription<List<Vehicle>>? _subscription;
+  bool _hasLoaded = false;
+
+  bool get hasLoaded => _hasLoaded;
+
+  void _subscribe() {
+    _subscription?.cancel();
     _subscription = _repository.watchVehicles().listen(
       (vehicles) {
         _hasLoaded = true;
@@ -88,12 +116,6 @@ class VehicleController extends StateNotifier<List<Vehicle>> {
       },
     );
   }
-
-  final VehicleRepository _repository;
-  StreamSubscription<List<Vehicle>>? _subscription;
-  bool _hasLoaded = false;
-
-  bool get hasLoaded => _hasLoaded;
 
   Future<void> refresh() async {
     state = await _repository.fetchVehicles();
@@ -126,7 +148,12 @@ class VehicleController extends StateNotifier<List<Vehicle>> {
 }
 
 final vehicleControllerProvider = StateNotifierProvider<VehicleController, List<Vehicle>>((ref) {
-  return VehicleController(ref.watch(repositoryProvider));
+  final session = ref.watch(authControllerProvider);
+  final repository = ref.watch(repositoryProvider);
+  if (!session.isReady || session.user == null) {
+    return VehicleController.idle(repository);
+  }
+  return VehicleController.active(repository);
 });
 
 class AdminController extends StateNotifier<int> {
@@ -249,77 +276,38 @@ final adminControllerProvider = StateNotifierProvider<AdminController, int>((ref
 });
 
 final movementsProvider = StreamProvider<List<Movement>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null) return Stream.value(const []);
   ref.watch(adminControllerProvider);
   return ref.watch(repositoryProvider).watchMovements();
 });
 
 final usersProvider = StreamProvider<List<AppUser>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null) return Stream.value(const []);
   ref.watch(adminControllerProvider);
   return ref.watch(repositoryProvider).watchUsers();
 });
 
 final rawDriverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
+  final user = ref.watch(authControllerProvider).user;
+  if (user == null) return Stream.value(const []);
   return ref.watch(repositoryProvider).watchDriverTracks();
 });
 
-final driverTracksProvider = StreamProvider<List<DriverTrack>>((ref) {
-  final repo = ref.watch(repositoryProvider);
-  return _activeDriverTracksStream(repo);
+final driverTracksProvider = Provider<AsyncValue<List<DriverTrack>>>((ref) {
+  final tracksAsync = ref.watch(rawDriverTracksProvider);
+  final vehicles = ref.watch(vehicleControllerProvider);
+  final users = ref.watch(usersProvider).valueOrNull ?? const <AppUser>[];
+  return tracksAsync.when(
+    data: (tracks) {
+      final enriched = DriverTrackFilter.withLiveNames(tracks: tracks, users: users, vehicles: vehicles);
+      return AsyncValue.data(DriverTrackFilter.forMapDisplay(enriched, vehicles));
+    },
+    loading: () => const AsyncValue.loading(),
+    error: (error, stackTrace) => AsyncValue.error(error, stackTrace),
+  );
 });
-
-Stream<List<DriverTrack>> _activeDriverTracksStream(VehicleRepository repo) {
-  final controller = StreamController<List<DriverTrack>>();
-  var tracks = const <DriverTrack>[];
-  var vehicles = const <Vehicle>[];
-  var tracksReady = false;
-  var vehiclesReady = false;
-
-  void publish() {
-    if (!controller.isClosed && (tracksReady || vehiclesReady)) {
-      controller.add(DriverTrackFilter.activeOnly(tracks, vehicles));
-    }
-  }
-
-  late final StreamSubscription<List<DriverTrack>> tracksSub;
-  late final StreamSubscription<List<Vehicle>> vehiclesSub;
-
-  controller.add(const []);
-
-  tracksSub = repo.watchDriverTracks().listen(
-        (value) {
-          tracks = value;
-          tracksReady = true;
-          publish();
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          debugPrint('Erro no stream de rastreamento: $error');
-          tracks = const [];
-          tracksReady = true;
-          publish();
-        },
-      );
-
-  vehiclesSub = repo.watchVehicles().listen(
-        (value) {
-          vehicles = value;
-          vehiclesReady = true;
-          publish();
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          debugPrint('Erro no stream de veiculos (GPS): $error');
-          vehicles = const [];
-          vehiclesReady = true;
-          publish();
-        },
-      );
-
-  controller.onCancel = () async {
-    await tracksSub.cancel();
-    await vehiclesSub.cancel();
-  };
-
-  return controller.stream;
-}
 
 final fleetAnnouncementsProvider = StreamProvider<List<FleetAnnouncement>>((ref) {
   final user = ref.watch(authControllerProvider).user;

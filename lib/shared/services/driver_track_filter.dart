@@ -49,4 +49,29 @@ abstract final class DriverTrackFilter {
     }
     return movingByDriver;
   }
+
+  static List<DriverTrack> withLiveNames({
+    required List<DriverTrack> tracks,
+    required List<AppUser> users,
+    required List<Vehicle> vehicles,
+  }) {
+    final usersById = {for (final user in users) user.id: user};
+    final vehiclesById = {for (final vehicle in vehicles) vehicle.id: vehicle};
+
+    return [
+      for (final track in tracks)
+        DriverTrack(
+          driverId: track.driverId,
+          driverName: usersById[track.driverId]?.name ?? track.driverName,
+          vehicleId: track.vehicleId,
+          vehicleName: vehiclesById[track.vehicleId]?.name ?? track.vehicleName,
+          latitude: track.latitude,
+          longitude: track.longitude,
+          speedKmh: track.speedKmh,
+          updatedAt: track.updatedAt,
+          accuracy: track.accuracy,
+          heading: track.heading,
+        ),
+    ];
+  }
 }
