@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:printing/printing.dart';
 
+import '../../../../core/widgets/pdf_bytes_viewer.dart';
 import '../../../../shared/models/app_models.dart';
 import '../../../../shared/services/vehicle_checklist_pdf_service.dart';
 
@@ -22,18 +22,15 @@ class ChecklistPdfViewerScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pdfService = VehicleChecklistPdfService();
+    final fileName = 'checklist_${checklist.checklistDate}_${checklist.vehicleName}.pdf';
 
     return Scaffold(
       appBar: AppBar(
         title: Text('Checklist ${checklist.vehicleName}'),
       ),
-      body: PdfPreview(
-        canChangePageFormat: false,
-        canChangeOrientation: false,
-        allowPrinting: true,
-        allowSharing: true,
-        pdfFileName: 'checklist_${checklist.checklistDate}_${checklist.vehicleName}.pdf',
-        build: (format) async {
+      body: PdfBytesViewer(
+        fileName: fileName,
+        loadBytes: () async {
           final bytes = await pdfService.buildPdfBytes(checklist);
           return Uint8List.fromList(bytes);
         },
