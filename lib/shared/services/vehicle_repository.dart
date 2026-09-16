@@ -6,6 +6,7 @@ abstract class VehicleRepository {
   AppUser? get currentUser;
   bool get hasPersistedAuthSession;
   Future<AppUser?> restoreSessionIfNeeded();
+  Future<AppUser?> refreshCurrentUser();
   Stream<AppUser?> get authStateChanges;
 
   Future<String?> login(String email, String password);

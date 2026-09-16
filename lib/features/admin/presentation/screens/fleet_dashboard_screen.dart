@@ -39,11 +39,7 @@ class _DashboardBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(movementsProvider);
-        ref.invalidate(usersProvider);
-        await ref.read(vehicleControllerProvider.notifier).refresh();
-      },
+      onRefresh: () => refreshAppData(ref),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
         children: [

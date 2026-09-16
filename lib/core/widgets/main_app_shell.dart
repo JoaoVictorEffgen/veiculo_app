@@ -273,16 +273,54 @@ class _NavItem extends StatelessWidget {
   }
 }
 
+class AppRefreshButton extends ConsumerStatefulWidget {
+  const AppRefreshButton({super.key});
+
+  @override
+  ConsumerState<AppRefreshButton> createState() => _AppRefreshButtonState();
+}
+
+class _AppRefreshButtonState extends ConsumerState<AppRefreshButton> {
+  var _loading = false;
+
+  Future<void> _refresh() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    try {
+      await refreshAppData(ref);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Dados atualizados')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: _loading ? null : _refresh,
+      icon: _loading
+          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.refresh),
+      tooltip: 'Atualizar',
+    );
+  }
+}
+
 class CorporateAppBar extends ConsumerWidget implements PreferredSizeWidget {
   const CorporateAppBar({
     super.key,
     required this.title,
     this.showBack = false,
+    this.showRefresh = true,
     this.actions,
   });
 
   final String title;
   final bool showBack;
+  final bool showRefresh;
   final List<Widget>? actions;
 
   @override
@@ -298,22 +336,25 @@ class CorporateAppBar extends ConsumerWidget implements PreferredSizeWidget {
             )
           : null,
       title: Text(title.toUpperCase()),
-      actions: actions ??
-          [
-            IconButton(
-              onPressed: () => context.go(AppRoutes.history),
-              icon: const Icon(Icons.history),
-              tooltip: 'Historico',
-            ),
-            IconButton(
-              onPressed: () async {
-                await ref.read(authControllerProvider.notifier).logout();
-                if (context.mounted) context.go(AppRoutes.login);
-              },
-              icon: const Icon(Icons.logout),
-              tooltip: 'Sair',
-            ),
-          ],
+      actions: [
+        if (showRefresh) const AppRefreshButton(),
+        ...(actions ??
+            [
+              IconButton(
+                onPressed: () => context.go(AppRoutes.history),
+                icon: const Icon(Icons.history),
+                tooltip: 'Historico',
+              ),
+              IconButton(
+                onPressed: () async {
+                  await ref.read(authControllerProvider.notifier).logout();
+                  if (context.mounted) context.go(AppRoutes.login);
+                },
+                icon: const Icon(Icons.logout),
+                tooltip: 'Sair',
+              ),
+            ]),
+      ],
     );
   }
 }

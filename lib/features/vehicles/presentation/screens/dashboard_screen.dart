@@ -39,7 +39,7 @@ class DashboardScreen extends ConsumerWidget {
         title: isAdmin ? 'Area administrativa' : 'Veiculos',
       ),
       body: RefreshIndicator(
-        onRefresh: () async => ref.read(vehicleControllerProvider.notifier).refresh(),
+        onRefresh: () => refreshAppData(ref),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
           children: [

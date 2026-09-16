@@ -36,6 +36,9 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   Future<AppUser?> restoreSessionIfNeeded() async => _local.currentUser;
 
   @override
+  Future<AppUser?> refreshCurrentUser() async => _local.currentUser;
+
+  @override
   Stream<AppUser?> get authStateChanges async* {
     yield _local.currentUser;
     yield* _authController.stream;

@@ -37,6 +37,29 @@ class FirebaseVehicleRepository implements VehicleRepository {
   bool get hasPersistedAuthSession => _auth.currentUser != null;
 
   @override
+  Future<AppUser?> refreshCurrentUser() async {
+    final firebaseUser = _auth.currentUser;
+    if (firebaseUser == null) {
+      _cachedUser = null;
+      return null;
+    }
+
+    try {
+      final remote = await _firestore
+          .collection(FirestorePaths.users)
+          .doc(firebaseUser.uid)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 10));
+      if (!remote.exists) return _cachedUser;
+      _cachedUser = _userFromDoc(remote);
+      return _cachedUser;
+    } catch (error) {
+      debugPrint('refreshCurrentUser: $error');
+      return _cachedUser;
+    }
+  }
+
+  @override
   Future<AppUser?> restoreSessionIfNeeded() async {
     final firebaseUser = _auth.currentUser;
     if (firebaseUser == null) {

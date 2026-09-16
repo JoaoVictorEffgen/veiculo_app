@@ -74,6 +74,11 @@ class AuthController extends StateNotifier<AuthSession> {
 
   Future<void> logout() => _repository.logout();
 
+  Future<void> refreshProfile() async {
+    await _repository.refreshCurrentUser();
+    state = AuthSession.ready(_repository.currentUser);
+  }
+
   @override
   void dispose() {
     _bootstrapTimer?.cancel();
@@ -418,3 +423,17 @@ final fleetAnalyticsProvider = Provider<AsyncValue<FleetAnalyticsReport>>((ref) 
       );
   return AsyncValue.data(report);
 });
+
+Future<void> refreshAppData(WidgetRef ref) async {
+  await ref.read(authControllerProvider.notifier).refreshProfile();
+  await ref.read(vehicleControllerProvider.notifier).refresh();
+  ref.invalidate(movementsProvider);
+  ref.invalidate(usersProvider);
+  ref.invalidate(rawDriverTracksProvider);
+  ref.invalidate(fleetAnnouncementsProvider);
+  ref.invalidate(driverTodayChecklistsProvider);
+  ref.invalidate(vehicleChecklistsProvider);
+  ref.invalidate(driverIssueReportsProvider);
+  ref.invalidate(adminAlertsProvider);
+  ref.invalidate(fleetAnalyticsProvider);
+}
