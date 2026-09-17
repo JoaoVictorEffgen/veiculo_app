@@ -17,6 +17,7 @@ web/.last_build_id
 .idea/
 .vscode/
 functions/node_modules/
+tool/node_modules/
 functions/lib/
 *.apk
 release-apk/

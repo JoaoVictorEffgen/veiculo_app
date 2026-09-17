@@ -113,6 +113,14 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   Future<String?> deleteAnnouncement(AppUser actor, String announcementId) async => 'Disponivel apenas com Firebase.';
 
   @override
+  Future<String?> startAnnouncement(
+    AppUser driver,
+    String announcementId, {
+    List<({double lat, double lng})>? routePoints,
+  }) async =>
+      'Disponivel apenas com Firebase.';
+
+  @override
   Future<String?> respondToAnnouncement(
     AppUser driver,
     String announcementId,

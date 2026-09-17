@@ -31,6 +31,11 @@ abstract class VehicleRepository {
     double? destinationLongitude,
   });
   Future<String?> deleteAnnouncement(AppUser actor, String announcementId);
+  Future<String?> startAnnouncement(
+    AppUser driver,
+    String announcementId, {
+    List<({double lat, double lng})>? routePoints,
+  });
   Future<String?> respondToAnnouncement(
     AppUser driver,
     String announcementId,

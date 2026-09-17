@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../../app/theme.dart';
+import '../../../../core/utils/iterable_extensions.dart';
 import '../../../../core/widgets/admin_only_gate.dart';
 import '../../../../core/widgets/corporate_ui.dart';
 import '../../../../core/widgets/main_app_shell.dart';
@@ -89,6 +90,9 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
   Widget build(BuildContext context) {
     final tracksAsync = ref.watch(driverTracksProvider);
     final vehicles = ref.watch(vehicleControllerProvider);
+    final activeTasks = (ref.watch(fleetAnnouncementsProvider).valueOrNull ?? const <FleetAnnouncement>[])
+        .where((task) => task.isInProgress && task.hasDestination)
+        .toList();
     final parkedVehicles = vehicles
         .where((vehicle) => vehicle.status == VehicleStatus.stopped && vehicle.hasStoppedCoordinates)
         .toList()
@@ -130,7 +134,7 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                   child: CorporatePageHeader(
                     title: 'Monitoramento da frota',
-                    subtitle: _buildSubtitle(tracks.length, parkedVehicles.length, staleCount),
+                    subtitle: _buildSubtitle(tracks.length, parkedVehicles.length, staleCount, activeTasks.length),
                   ),
                 ),
                 Padding(
@@ -164,6 +168,27 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                           TileLayer(
                             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                             userAgentPackageName: 'com.example.vehicle_control_app',
+                          ),
+                          PolylineLayer(
+                            polylines: [
+                              for (var i = 0; i < tracks.length; i++)
+                                if (_trailAsLatLng(tracks[i]).length >= 2)
+                                  Polyline(
+                                    points: _trailAsLatLng(tracks[i]),
+                                    color: _trailColor(i, DriverTrackFilter.isStale(tracks[i])),
+                                    strokeWidth: 4,
+                                  ),
+                              for (final task in activeTasks)
+                                if (_taskRoutePoints(tracks, task).length >= 2)
+                                  Polyline(
+                                    points: _taskRoutePoints(tracks, task),
+                                    color: AppColors.primary.withValues(alpha: task.hasPlannedRoute ? 0.85 : 0.55),
+                                    strokeWidth: task.hasPlannedRoute ? 4 : 3,
+                                    pattern: task.hasPlannedRoute
+                                        ? const StrokePattern.solid()
+                                        : StrokePattern.dashed(segments: [12, 8]),
+                                  ),
+                            ],
                           ),
                           if (_myPosition != null)
                             MarkerLayer(
@@ -211,6 +236,35 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
                                               : AppColors.statusMoving,
                                           size: 32,
                                         ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              for (final task in activeTasks)
+                                Marker(
+                                  point: LatLng(task.destinationLatitude!, task.destinationLongitude!),
+                                  width: 140,
+                                  height: 88,
+                                  alignment: Alignment.topCenter,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(8),
+                                            boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black26)],
+                                          ),
+                                          child: Text(
+                                            'Destino\n${task.startedByName ?? 'Motorista'}',
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        const Icon(Icons.flag, color: AppColors.primary, size: 32),
                                       ],
                                     ),
                                   ),
@@ -293,16 +347,48 @@ class _TrackingScreenState extends ConsumerState<TrackingScreen> {
     );
   }
 
-  String _buildSubtitle(int movingCount, int parkedCount, int staleCount) {
+  String _buildSubtitle(int movingCount, int parkedCount, int staleCount, int activeTaskCount) {
     final parts = <String>[];
     if (movingCount > 0) {
       parts.add(staleCount > 0
           ? '$movingCount em movimento ($staleCount GPS desatualizado)'
           : '$movingCount em movimento');
     }
+    if (activeTaskCount > 0) parts.add('$activeTaskCount tarefa(s) com destino');
     if (parkedCount > 0) parts.add('$parkedCount parado(s) com ultima posicao');
     if (_myPosition != null) parts.add('distancia calculada da sua posicao');
     return parts.join(' • ');
+  }
+
+  List<LatLng> _trailAsLatLng(DriverTrack track) {
+    final points = [for (final point in track.trailPoints) LatLng(point.lat, point.lng)];
+    if (points.isEmpty) return [LatLng(track.latitude, track.longitude)];
+    final last = points.last;
+    if (last.latitude != track.latitude || last.longitude != track.longitude) {
+      points.add(LatLng(track.latitude, track.longitude));
+    }
+    return points;
+  }
+
+  List<LatLng> _taskRoutePoints(List<DriverTrack> tracks, FleetAnnouncement task) {
+    if (task.hasPlannedRoute) {
+      return [for (final point in task.routePoints) LatLng(point.lat, point.lng)];
+    }
+
+    final driverId = task.startedById;
+    if (driverId == null) return const [];
+    final track = tracks.where((item) => item.driverId == driverId).firstOrNull;
+    if (track == null) return const [];
+    return [
+      LatLng(track.latitude, track.longitude),
+      LatLng(task.destinationLatitude!, task.destinationLongitude!),
+    ];
+  }
+
+  Color _trailColor(int index, bool stale) {
+    if (stale) return AppColors.statusStopped;
+    const colors = [AppColors.accent, AppColors.statusMoving, AppColors.primary, AppColors.statusMovingDark];
+    return colors[index % colors.length];
   }
 }
 

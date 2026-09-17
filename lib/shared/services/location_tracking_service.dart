@@ -41,6 +41,9 @@ class LocationTrackingService {
   DateTime? _lastPositionAt;
   DateTime? _lastPublishAt;
   double _sessionDistanceMeters = 0;
+  final List<Map<String, double>> _trailPoints = [];
+
+  static const _maxTrailPoints = 400;
 
   bool get isTracking => _subscription != null;
   String? get permissionIssue => _permissionIssue;
@@ -156,6 +159,8 @@ class LocationTrackingService {
 
   Future<void> endTripSession() async {
     await _sessionService.clear();
+    _trailPoints.clear();
+    _sessionDistanceMeters = 0;
     await pauseLocalTracking();
   }
 
@@ -166,7 +171,12 @@ class LocationTrackingService {
       return;
     }
 
+    final isNewSession = _activeDriverId != user.id || _activeVehicle?.id != vehicle.id;
     await pauseLocalTracking();
+    if (isNewSession) {
+      _trailPoints.clear();
+      _sessionDistanceMeters = 0;
+    }
 
     final granted = await ensurePermission(requireBackground: true);
     if (!granted) {
@@ -240,6 +250,24 @@ class LocationTrackingService {
     _lastPublishAt = null;
   }
 
+  void _appendTrailPoint(Position position) {
+    if (_trailPoints.isNotEmpty) {
+      final last = _trailPoints.last;
+      final meters = Geolocator.distanceBetween(
+        last['lat']!,
+        last['lng']!,
+        position.latitude,
+        position.longitude,
+      );
+      if (meters < LocationTrackingConfig.minStepMeters) return;
+    }
+
+    _trailPoints.add({'lat': position.latitude, 'lng': position.longitude});
+    if (_trailPoints.length > _maxTrailPoints) {
+      _trailPoints.removeRange(0, _trailPoints.length - _maxTrailPoints);
+    }
+  }
+
   LocationSettings _buildLocationSettings({required String vehicleName}) {
     if (kIsWeb) {
       return WebSettings(
@@ -311,6 +339,7 @@ class LocationTrackingService {
 
     final speedKmh = _resolveSpeedKmh(position);
     _accumulateDistance(position);
+    _appendTrailPoint(position);
 
     try {
       await _firestore.collection(FirestorePaths.tracking).doc(user.id).set({
@@ -324,6 +353,9 @@ class LocationTrackingService {
         'sessionDistanceKm': double.parse(sessionDistanceKm.toStringAsFixed(2)),
         'accuracy': position.accuracy,
         'heading': position.heading,
+        'trailPoints': _trailPoints
+            .map((point) => {'lat': point['lat'], 'lng': point['lng']})
+            .toList(growable: false),
         'updatedAt': FieldValue.serverTimestamp(),
       });
       _lastPublishAt = DateTime.now();

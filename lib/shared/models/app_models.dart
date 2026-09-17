@@ -176,6 +176,7 @@ class DriverTrack {
     required this.updatedAt,
     this.accuracy,
     this.heading,
+    this.trailPoints = const [],
   });
 
   final String driverId;
@@ -188,6 +189,7 @@ class DriverTrack {
   final DateTime updatedAt;
   final double? accuracy;
   final double? heading;
+  final List<({double lat, double lng})> trailPoints;
 }
 
 enum AnnouncementResponseStatus { completed, rejected }
@@ -210,6 +212,10 @@ class FleetAnnouncement {
     this.destinationAddress,
     this.destinationLatitude,
     this.destinationLongitude,
+    this.startedById,
+    this.startedByName,
+    this.startedAt,
+    this.routePoints = const [],
   });
 
   final String id;
@@ -228,6 +234,12 @@ class FleetAnnouncement {
   final String? destinationAddress;
   final double? destinationLatitude;
   final double? destinationLongitude;
+  final String? startedById;
+  final String? startedByName;
+  final DateTime? startedAt;
+  final List<({double lat, double lng})> routePoints;
+
+  bool get hasPlannedRoute => routePoints.length >= 2;
 
   bool get hasDestination =>
       destinationLatitude != null &&
@@ -236,11 +248,33 @@ class FleetAnnouncement {
 
   bool get isExpired => expiresAt != null && !expiresAt!.isAfter(DateTime.now());
 
-  bool get isGroupTask => targetDriverId == null;
+  bool get isGroupTask => targetDriverId == null || targetDriverId!.isEmpty;
 
   bool get requiresResponse => true;
 
   bool get isPendingResponse => active && responseStatus == null && !isExpired;
+
+  bool get isInProgress => isPendingResponse && startedById != null;
+
+  bool get isAvailableToStart => isPendingResponse && !isInProgress;
+
+  bool isStartedBy(AppUser user) => startedById == user.id;
+
+  bool canStart(AppUser user) {
+    if (!user.canRespondToFleetTasks || !isAvailableToStart) return false;
+    if (isGroupTask) return true;
+    return targetDriverId == user.id;
+  }
+
+  bool canComplete(AppUser user) {
+    if (!user.canRespondToFleetTasks || !isInProgress) return false;
+    return isStartedBy(user);
+  }
+
+  bool canReject(AppUser user) {
+    if (!user.canRespondToFleetTasks || !isAvailableToStart || isGroupTask) return false;
+    return targetDriverId == user.id;
+  }
 
   bool isVisibleTo(AppUser user) {
     if (isExpired) return false;

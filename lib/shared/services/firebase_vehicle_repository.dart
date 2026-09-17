@@ -308,6 +308,58 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   @override
+  Future<String?> startAnnouncement(
+    AppUser driver,
+    String announcementId, {
+    List<({double lat, double lng})>? routePoints,
+  }) async {
+    if (driver.role != UserRole.driver) return 'Somente motoristas podem iniciar tarefas.';
+
+    try {
+      final authUid = _auth.currentUser?.uid;
+      if (authUid == null) return 'Sessao expirada. Faca login novamente.';
+      if (authUid != driver.id) return 'Sessao invalida. Faca login novamente.';
+
+      final docRef = _firestore.collection(FirestorePaths.announcements).doc(announcementId);
+      final doc = await docRef.get(const GetOptions(source: Source.server));
+      if (!doc.exists) throw StateError('Tarefa nao encontrada.');
+
+      final announcement = _announcementFromDoc(doc);
+      if (announcement.isExpired) throw StateError('Esta tarefa expirou.');
+      if (!announcement.isAvailableToStart) {
+        if (announcement.isInProgress) {
+          throw StateError(
+            'Esta tarefa ja foi iniciada por ${announcement.startedByName ?? 'outro motorista'}.',
+          );
+        }
+        throw StateError('Esta tarefa nao esta mais disponivel.');
+      }
+      if (!announcement.isGroupTask && announcement.targetDriverId != driver.id) {
+        throw StateError('Esta tarefa nao foi destinada a voce.');
+      }
+
+      await docRef.update({
+        'startedById': authUid,
+        'startedByName': driver.name,
+        'startedAt': FieldValue.serverTimestamp(),
+        if (routePoints != null && routePoints.isNotEmpty)
+          'routePoints': [
+            for (final point in routePoints) {'lat': point.lat, 'lng': point.lng},
+          ],
+      });
+      return null;
+    } on StateError catch (error) {
+      return error.message;
+    } on FirebaseException catch (error) {
+      debugPrint('startAnnouncement firebase: code=${error.code} message=${error.message}');
+      if (error.code == 'permission-denied') {
+        return 'Nao foi possivel iniciar a tarefa. Peça ao admin para remover e publicar de novo, ou tente outro motorista.';
+      }
+      return error.message ?? 'Erro ao iniciar tarefa.';
+    }
+  }
+
+  @override
   Future<String?> respondToAnnouncement(
     AppUser driver,
     String announcementId,
@@ -345,6 +397,21 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
         if (!announcement.isPendingResponse) {
           throw StateError('Esta tarefa ja foi respondida.');
+        }
+
+        if (status == AnnouncementResponseStatus.rejected) {
+          if (announcement.isInProgress) {
+            throw StateError('Nao e possivel recusar uma tarefa ja iniciada.');
+          }
+        } else {
+          if (!announcement.isInProgress) {
+            throw StateError('Inicie a tarefa antes de concluir.');
+          }
+          if (announcement.startedById != authUid) {
+            throw StateError(
+              'Esta tarefa esta em andamento por ${announcement.startedByName ?? 'outro motorista'}.',
+            );
+          }
         }
 
         final alertRef = _firestore.collection(FirestorePaths.adminAlerts).doc();
@@ -1316,6 +1383,19 @@ class FirebaseVehicleRepository implements VehicleRepository {
     );
   }
 
+  List<({double lat, double lng})> _trailPointsFromData(dynamic raw) {
+    if (raw is! List) return const [];
+    final points = <({double lat, double lng})>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final lat = (item['lat'] as num?)?.toDouble() ?? (item['latitude'] as num?)?.toDouble();
+      final lng = (item['lng'] as num?)?.toDouble() ?? (item['longitude'] as num?)?.toDouble();
+      if (lat == null || lng == null) continue;
+      points.add((lat: lat, lng: lng));
+    }
+    return points;
+  }
+
   DriverTrack _trackFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data()!;
     return DriverTrack(
@@ -1329,6 +1409,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0),
       accuracy: (data['accuracy'] as num?)?.toDouble(),
       heading: (data['heading'] as num?)?.toDouble(),
+      trailPoints: _trailPointsFromData(data['trailPoints']),
     );
   }
 
@@ -1354,6 +1435,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
       destinationAddress: data['destinationAddress'] as String?,
       destinationLatitude: (data['destinationLatitude'] as num?)?.toDouble(),
       destinationLongitude: (data['destinationLongitude'] as num?)?.toDouble(),
+      startedById: data['startedById'] as String?,
+      startedByName: data['startedByName'] as String?,
+      startedAt: (data['startedAt'] as Timestamp?)?.toDate(),
+      routePoints: _trailPointsFromData(data['routePoints']),
     );
   }
 

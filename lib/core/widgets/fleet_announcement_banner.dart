@@ -8,6 +8,7 @@ import '../../shared/models/app_models.dart';
 import '../../shared/services/app_providers.dart';
 import 'corporate_ui.dart';
 import 'driver_route_planner_card.dart';
+import 'task_start_flow.dart';
 
 class FleetAnnouncementBanner extends ConsumerWidget {
   const FleetAnnouncementBanner({super.key});
@@ -59,9 +60,10 @@ class _AnnouncementCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final canRespond = user.canRespondToFleetTasks &&
-        announcement.isPendingResponse &&
-        (announcement.isGroupTask || announcement.targetDriverId == user.id);
+    final canStart = announcement.canStart(user);
+    final canComplete = announcement.canComplete(user);
+    final canReject = announcement.canReject(user);
+    final inProgressByOther = announcement.isInProgress && !announcement.isStartedBy(user);
 
     return CorporateSurface(
       margin: const EdgeInsets.only(bottom: 12),
@@ -111,12 +113,21 @@ class _AnnouncementCard extends ConsumerWidget {
                           ],
                         ),
                       ),
-                    if (announcement.isGroupTask && user.canRespondToFleetTasks)
+                    if (announcement.isGroupTask && user.canRespondToFleetTasks && announcement.isAvailableToStart)
                       const Padding(
                         padding: EdgeInsets.only(top: 6),
                         child: Text(
-                          'Visivel para todos os motoristas cadastrados. O primeiro que concluir remove para todos.',
+                          'Visivel para todos os motoristas. O primeiro que iniciar fica responsavel pela tarefa.',
                           style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontStyle: FontStyle.italic),
+                        ),
+                      ),
+                    if (announcement.isInProgress)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: _InProgressBadge(
+                          driverName: announcement.startedByName,
+                          startedAt: announcement.startedAt,
+                          isMine: announcement.isStartedBy(user),
                         ),
                       ),
                     if (announcement.responseStatus != null)
@@ -133,7 +144,9 @@ class _AnnouncementCard extends ConsumerWidget {
               ),
             ],
           ),
-          if ((announcement.destinationAddress?.trim().isNotEmpty ?? false) && user.role == UserRole.driver) ...[
+          if ((announcement.destinationAddress?.trim().isNotEmpty ?? false) &&
+              user.role == UserRole.driver &&
+              !inProgressByOther) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () => openRouteToDestination(
@@ -147,45 +160,53 @@ class _AnnouncementCard extends ConsumerWidget {
               label: const Text('Ver rota'),
             ),
           ],
-          if (canRespond) ...[
+          if (canStart) ...[
             const SizedBox(height: 12),
-            if (announcement.isGroupTask)
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.statusMoving,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () => _respond(context, ref, AnnouncementResponseStatus.completed),
-                icon: const Icon(Icons.check_circle_outline),
-                label: const Text('CONCLUIR'),
-              )
-            else
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.statusMoving,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () => _respond(context, ref, AnnouncementResponseStatus.completed),
-                      icon: const Icon(Icons.check_circle_outline),
-                      label: const Text('CONCLUIDO'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _respond(context, ref, AnnouncementResponseStatus.rejected),
-                      icon: const Icon(Icons.cancel_outlined),
-                      label: const Text('RECUSADO'),
-                    ),
-                  ),
-                ],
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
               ),
+              onPressed: () => _start(context, ref),
+              icon: const Icon(Icons.play_arrow_rounded),
+              label: const Text('INICIAR TAREFA'),
+            ),
+          ],
+          if (canComplete) ...[
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.statusMoving,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => _respond(context, ref, AnnouncementResponseStatus.completed),
+              icon: const Icon(Icons.check_circle_outline),
+              label: Text(announcement.isGroupTask ? 'CONCLUIR' : 'CONCLUIDO'),
+            ),
+          ],
+          if (canReject) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _respond(context, ref, AnnouncementResponseStatus.rejected),
+              icon: const Icon(Icons.cancel_outlined),
+              label: const Text('RECUSADO'),
+            ),
           ],
         ],
       ),
+    );
+  }
+
+  Future<void> _start(BuildContext context, WidgetRef ref) async {
+    final started = await runTaskStartFlow(
+      context: context,
+      ref: ref,
+      driver: user,
+      announcement: announcement,
+    );
+    if (!context.mounted || !started) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Tarefa iniciada com o veiculo selecionado.')),
     );
   }
 
@@ -246,6 +267,39 @@ class _AnnouncementCard extends ConsumerWidget {
     );
     controller.dispose();
     return result;
+  }
+}
+
+class _InProgressBadge extends StatelessWidget {
+  const _InProgressBadge({
+    required this.driverName,
+    required this.startedAt,
+    required this.isMine,
+  });
+
+  final String? driverName;
+  final DateTime? startedAt;
+  final bool isMine;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = driverName ?? 'Motorista';
+    final timeLabel = startedAt == null ? '' : ' • ${formatDateTime(startedAt)}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.statusMovingBg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        isMine ? 'Voce iniciou esta tarefa$timeLabel' : '$name a caminho$timeLabel',
+        style: const TextStyle(
+          color: AppColors.statusMovingDark,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+      ),
+    );
   }
 }
 
@@ -401,8 +455,8 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
         children: [
           const CorporateSectionTitle(title: 'Tarefas para motoristas'),
           const Text(
-            'Para todos os motoristas cadastrados: so Concluir — o primeiro que concluir remove para todos. '
-            'Para um motorista especifico: Concluido ou Recusado com notificacao instantanea.',
+            'Para todos: o primeiro que iniciar fica responsavel e so ele pode concluir. '
+            'Para um motorista especifico: Iniciar, Concluir ou Recusar antes de iniciar.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
           const SizedBox(height: 12),
@@ -432,6 +486,14 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
                       Text(
                         'Destino: ${announcement.destinationAddress}',
                         style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                    ],
+                    if (announcement.isInProgress) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Em andamento: ${announcement.startedByName ?? 'Motorista'}'
+                        '${announcement.startedAt == null ? '' : ' • ${formatDateTime(announcement.startedAt)}'}',
+                        style: const TextStyle(color: AppColors.statusMovingDark, fontSize: 12, fontWeight: FontWeight.w600),
                       ),
                     ],
                     if (announcement.responseStatus != null) ...[

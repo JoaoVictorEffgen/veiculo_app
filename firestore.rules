@@ -45,6 +45,27 @@ service cloud.firestore {
         && resource.data.expiresAt <= request.time;
     }
 
+    function isGroupOrAssignedTask(data) {
+      return data.get('targetDriverId', null) == null
+        || data.get('targetDriverId', '') == ''
+        || data.targetDriverId == request.auth.uid;
+    }
+
+    function isDriverStartingTask() {
+      return isSignedIn()
+        && announcementIsActive(resource.data)
+        && resource.data.get('responseStatus', null) == null
+        && resource.data.get('startedById', null) == null
+        && isGroupOrAssignedTask(resource.data)
+        && request.resource.data.get('startedById', null) == request.auth.uid
+        && request.resource.data.get('startedByName', null) is string
+        && request.resource.data.get('startedByName', '').size() > 0
+        && (
+          request.writeFields.hasOnly(['startedById', 'startedByName', 'startedAt'])
+          || request.writeFields.hasOnly(['startedById', 'startedByName', 'startedAt', 'routePoints'])
+        );
+    }
+
     function isDriverAnnouncementResponse() {
       return isSignedIn()
         && resource.data.targetDriverId == request.auth.uid
@@ -52,12 +73,15 @@ service cloud.firestore {
         && announcementIsActive(resource.data)
         && request.resource.data.active == false
         && request.resource.data.responseStatus in ['completed', 'rejected']
-        && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['responseStatus', 'respondedAt', 'respondedByName', 'rejectionReason', 'active'])
+        && request.writeFields.hasOnly(['responseStatus', 'respondedAt', 'respondedByName', 'rejectionReason', 'active'])
         && (
-          request.resource.data.responseStatus == 'completed'
+          (
+            request.resource.data.responseStatus == 'completed'
+            && resource.data.get('startedById', null) == request.auth.uid
+          )
           || (
             request.resource.data.responseStatus == 'rejected'
+            && resource.data.get('startedById', null) == null
             && request.resource.data.rejectionReason is string
             && request.resource.data.rejectionReason.size() > 0
           )
@@ -77,11 +101,11 @@ service cloud.firestore {
         && isGroupAnnouncementData(resource.data)
         && announcementIsActive(resource.data)
         && resource.data.get('responseStatus', null) == null
+        && resource.data.get('startedById', null) == request.auth.uid
         && request.resource.data.active == false
         && request.resource.data.responseStatus == 'completed'
         && request.resource.data.respondedByName is string
-        && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['active', 'responseStatus', 'respondedAt', 'respondedByName']);
+        && request.writeFields.hasOnly(['active', 'responseStatus', 'respondedAt', 'respondedByName']);
     }
 
     function isDriverCompletingGroupTask() {
@@ -166,7 +190,7 @@ service cloud.firestore {
     match /announcements/{announcementId} {
       allow read: if isSignedIn();
       allow create: if isAdmin();
-      allow update: if isAdmin() || isDriverAnnouncementResponse() || isDriverCompletingGroupTaskUpdate();
+      allow update: if isAdmin() || isDriverStartingTask() || isDriverAnnouncementResponse() || isDriverCompletingGroupTaskUpdate();
       allow delete: if isAdmin() || (isSignedIn() && isExpiredAnnouncement()) || isDriverDeletingOwnReminder() || isDriverCompletingGroupTask();
     }
 

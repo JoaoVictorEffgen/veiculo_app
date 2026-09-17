@@ -2,10 +2,6 @@ import '../models/app_models.dart';
 import 'location_tracking_service.dart';
 
 abstract final class DriverTrackFilter {
-  static List<DriverTrack> activeOnly(List<DriverTrack> tracks, List<Vehicle> vehicles) {
-    return forMapDisplay(tracks, vehicles);
-  }
-
   static List<DriverTrack> forMapDisplay(List<DriverTrack> tracks, List<Vehicle> vehicles) {
     final movingByDriver = _movingByDriver(vehicles);
     final now = DateTime.now();
@@ -71,6 +67,7 @@ abstract final class DriverTrackFilter {
           updatedAt: track.updatedAt,
           accuracy: track.accuracy,
           heading: track.heading,
+          trailPoints: track.trailPoints,
         ),
     ];
   }

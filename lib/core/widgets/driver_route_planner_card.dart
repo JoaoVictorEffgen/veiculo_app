@@ -315,6 +315,26 @@ class _DriverRoutePlannerCardState extends ConsumerState<DriverRoutePlannerCard>
   }
 }
 
+Future<NavigationRoutePlan?> buildRouteToDestination(
+  WidgetRef ref, {
+  required FleetAnnouncement announcement,
+}) async {
+  final destination = await resolveTaskDestination(ref, announcement);
+  if (destination == null) return null;
+
+  final locationService = ref.read(locationTrackingServiceProvider);
+  final allowed = await locationService.ensurePermission(requireBackground: false);
+  if (!allowed) return null;
+
+  final coordinates = await locationService.getCurrentCoordinates();
+  if (coordinates == null) return null;
+
+  return ref.read(routingServiceProvider).buildDrivingRoute(
+        origin: LatLng(coordinates.latitude, coordinates.longitude),
+        destination: destination,
+      );
+}
+
 Future<void> openRouteToDestination(
   BuildContext context,
   WidgetRef ref, {
@@ -332,39 +352,15 @@ Future<void> openRouteToDestination(
     destinationLongitude: destinationLongitude,
   );
 
-  final destination = await resolveTaskDestination(ref, task);
-  if (destination == null) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Nao foi possivel localizar o endereco.')),
-    );
-    return;
-  }
-
-  final locationService = ref.read(locationTrackingServiceProvider);
-  final allowed = await locationService.ensurePermission(requireBackground: false);
-  if (!allowed) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(locationService.permissionIssue ?? 'Ative o GPS para calcular a rota.')),
-    );
-    return;
-  }
-
-  final coordinates = await locationService.getCurrentCoordinates();
-  if (coordinates == null) {
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Nao foi possivel obter sua localizacao atual.')),
-    );
-    return;
-  }
-
   try {
-    final route = await ref.read(routingServiceProvider).buildDrivingRoute(
-          origin: LatLng(coordinates.latitude, coordinates.longitude),
-          destination: destination,
-        );
+    final route = await buildRouteToDestination(ref, announcement: task);
+    if (route == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nao foi possivel calcular a rota. Verifique GPS e endereco.')),
+      );
+      return;
+    }
     if (!context.mounted) return;
     await openNavigationRouteScreen(context, route: route);
   } on RoutingException catch (error) {
