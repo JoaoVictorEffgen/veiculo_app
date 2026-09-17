@@ -8,6 +8,8 @@ import '../models/auth_session.dart';
 import '../models/fleet_analytics.dart';
 import 'driver_track_filter.dart';
 import 'fleet_analytics_service.dart';
+import 'geocoding_service.dart';
+import 'routing_service.dart';
 import 'fleet_report_export_service.dart';
 import 'maintenance_alert_service.dart';
 import 'location_tracking_service.dart';
@@ -27,6 +29,14 @@ final locationTrackingServiceProvider = Provider<LocationTrackingService>((ref) 
 
 final tripStartVoiceServiceProvider = Provider<TripStartVoiceService>((ref) {
   final service = TripStartVoiceService();
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+final geocodingServiceProvider = Provider<GeocodingService>((ref) => GeocodingService());
+
+final routingServiceProvider = Provider<RoutingService>((ref) {
+  final service = RoutingService();
   ref.onDispose(service.dispose);
   return service;
 });

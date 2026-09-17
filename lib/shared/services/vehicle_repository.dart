@@ -26,6 +26,9 @@ abstract class VehicleRepository {
     DateTime? expiresAt,
     String? targetDriverId,
     String? targetDriverName,
+    String? destinationAddress,
+    double? destinationLatitude,
+    double? destinationLongitude,
   });
   Future<String?> deleteAnnouncement(AppUser actor, String announcementId);
   Future<String?> respondToAnnouncement(

@@ -103,6 +103,9 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
     DateTime? expiresAt,
     String? targetDriverId,
     String? targetDriverName,
+    String? destinationAddress,
+    double? destinationLatitude,
+    double? destinationLongitude,
   }) async =>
       'Disponivel apenas com Firebase.';
 

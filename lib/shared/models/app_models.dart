@@ -207,6 +207,9 @@ class FleetAnnouncement {
     this.respondedAt,
     this.respondedByName,
     this.rejectionReason,
+    this.destinationAddress,
+    this.destinationLatitude,
+    this.destinationLongitude,
   });
 
   final String id;
@@ -222,6 +225,14 @@ class FleetAnnouncement {
   final DateTime? respondedAt;
   final String? respondedByName;
   final String? rejectionReason;
+  final String? destinationAddress;
+  final double? destinationLatitude;
+  final double? destinationLongitude;
+
+  bool get hasDestination =>
+      destinationLatitude != null &&
+      destinationLongitude != null &&
+      (destinationAddress?.trim().isNotEmpty ?? false);
 
   bool get isExpired => expiresAt != null && !expiresAt!.isAfter(DateTime.now());
 

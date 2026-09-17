@@ -264,6 +264,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
     DateTime? expiresAt,
     String? targetDriverId,
     String? targetDriverName,
+    String? destinationAddress,
+    double? destinationLatitude,
+    double? destinationLongitude,
   }) async {
     if (actor.role != UserRole.admin) return 'Somente administradores podem publicar tarefas.';
     final text = message.trim();
@@ -282,6 +285,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
         if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
         if (targetDriverId != null) 'targetDriverId': targetDriverId,
         if (targetDriverName != null) 'targetDriverName': targetDriverName,
+        if (destinationAddress != null) 'destinationAddress': destinationAddress,
+        if (destinationLatitude != null) 'destinationLatitude': destinationLatitude,
+        if (destinationLongitude != null) 'destinationLongitude': destinationLongitude,
       });
       return null;
     } on FirebaseException catch (error) {
@@ -1345,6 +1351,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
       respondedAt: (data['respondedAt'] as Timestamp?)?.toDate(),
       respondedByName: data['respondedByName'] as String?,
       rejectionReason: data['rejectionReason'] as String?,
+      destinationAddress: data['destinationAddress'] as String?,
+      destinationLatitude: (data['destinationLatitude'] as num?)?.toDouble(),
+      destinationLongitude: (data['destinationLongitude'] as num?)?.toDouble(),
     );
   }
 

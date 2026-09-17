@@ -7,6 +7,7 @@ import '../../core/utils/iterable_extensions.dart';
 import '../../shared/models/app_models.dart';
 import '../../shared/services/app_providers.dart';
 import 'corporate_ui.dart';
+import 'driver_route_planner_card.dart';
 
 class FleetAnnouncementBanner extends ConsumerWidget {
   const FleetAnnouncementBanner({super.key});
@@ -94,6 +95,22 @@ class _AnnouncementCard extends ConsumerWidget {
                         'Valido ate ${formatDate(announcement.expiresAt)}',
                         style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
                       ),
+                    if (announcement.destinationAddress?.trim().isNotEmpty ?? false)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.place_outlined, size: 16, color: AppColors.accent),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                announcement.destinationAddress!,
+                                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     if (announcement.isGroupTask && user.canRespondToFleetTasks)
                       const Padding(
                         padding: EdgeInsets.only(top: 6),
@@ -116,6 +133,20 @@ class _AnnouncementCard extends ConsumerWidget {
               ),
             ],
           ),
+          if ((announcement.destinationAddress?.trim().isNotEmpty ?? false) && user.role == UserRole.driver) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => openRouteToDestination(
+                context,
+                ref,
+                destinationAddress: announcement.destinationAddress!,
+                destinationLatitude: announcement.destinationLatitude,
+                destinationLongitude: announcement.destinationLongitude,
+              ),
+              icon: const Icon(Icons.route_outlined, size: 18),
+              label: const Text('Ver rota'),
+            ),
+          ],
           if (canRespond) ...[
             const SizedBox(height: 12),
             if (announcement.isGroupTask)
@@ -263,6 +294,7 @@ class FleetAnnouncementEditor extends ConsumerStatefulWidget {
 
 class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEditor> {
   final _controller = TextEditingController();
+  final _destinationController = TextEditingController();
   bool _publishing = false;
   DateTime? _expiresAt;
   String? _targetDriverId;
@@ -270,6 +302,7 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
   @override
   void dispose() {
     _controller.dispose();
+    _destinationController.dispose();
     super.dispose();
   }
 
@@ -296,12 +329,34 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
         ? null
         : drivers.where((driver) => driver.id == _targetDriverId).firstOrNull;
 
+    final destinationText = _destinationController.text.trim();
+    String? destinationAddress;
+    double? destinationLatitude;
+    double? destinationLongitude;
+    if (destinationText.isNotEmpty) {
+      final resolved = await ref.read(geocodingServiceProvider).resolveAddress(destinationText);
+      if (resolved == null) {
+        if (!mounted) return;
+        setState(() => _publishing = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Endereco nao encontrado. Corrija ou deixe em branco.')),
+        );
+        return;
+      }
+      destinationAddress = resolved.label;
+      destinationLatitude = resolved.latitude;
+      destinationLongitude = resolved.longitude;
+    }
+
     final error = await ref.read(repositoryProvider).publishAnnouncement(
           widget.admin,
           message: _controller.text,
           expiresAt: _expiresAt,
           targetDriverId: selectedDriver?.id,
           targetDriverName: selectedDriver?.name,
+          destinationAddress: destinationAddress,
+          destinationLatitude: destinationLatitude,
+          destinationLongitude: destinationLongitude,
         );
     if (!mounted) return;
     setState(() => _publishing = false);
@@ -310,6 +365,7 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
       return;
     }
     _controller.clear();
+    _destinationController.clear();
     setState(() {
       _expiresAt = null;
       _targetDriverId = null;
@@ -371,6 +427,13 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
                     ),
                     const SizedBox(height: 6),
                     Text(announcement.message),
+                    if (announcement.destinationAddress?.trim().isNotEmpty ?? false) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Destino: ${announcement.destinationAddress}',
+                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      ),
+                    ],
                     if (announcement.responseStatus != null) ...[
                       const SizedBox(height: 6),
                       _ResponseBadge(
@@ -405,6 +468,16 @@ class _FleetAnnouncementEditorState extends ConsumerState<FleetAnnouncementEdito
               labelText: 'Nova tarefa',
               hintText: 'Ex.: Amanha manutencao do Fiorino 01',
               alignLabelWithHint: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _destinationController,
+            enabled: !_publishing,
+            decoration: const InputDecoration(
+              labelText: 'Endereco de destino (opcional)',
+              hintText: 'Ex.: Rua das Flores, 120, Sao Paulo',
+              prefixIcon: Icon(Icons.place_outlined),
             ),
           ),
           const SizedBox(height: 12),

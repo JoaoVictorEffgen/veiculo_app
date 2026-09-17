@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../../app/theme.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/utils/loading_dialog.dart';
+import '../../../../core/widgets/driver_route_planner_card.dart';
 import '../../../../core/widgets/fleet_announcement_banner.dart';
 import '../../../../core/widgets/main_app_shell.dart';
 import '../../../../core/widgets/vehicle_checklist_sheet.dart';
@@ -54,6 +55,10 @@ class DashboardScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 16),
             const FleetAnnouncementBanner(),
+            if (!isAdmin) ...[
+              const SizedBox(height: 16),
+              const DriverRoutePlannerCard(),
+            ],
             if (isAdmin && user != null) ...[
               const SizedBox(height: 16),
               FleetAnnouncementEditor(admin: user),
