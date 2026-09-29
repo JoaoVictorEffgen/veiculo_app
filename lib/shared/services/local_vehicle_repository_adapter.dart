@@ -309,4 +309,7 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
 
   @override
   Future<void> ensureSeedData() async {}
+
+  @override
+  Future<void> repairLegacyTenantDataForSession() async {}
 }

@@ -20,7 +20,8 @@ Veiculos demo: Saveiro Demo, Ranger Demo (placas DEM-*).
    ```bash
    firebase deploy --only firestore:rules,firestore:indexes
    ```
-2. Abra o app (ou rode `flutter run`) logado como qualquer usuario — o `ensureSeedData` cria/atualiza empresas, usuarios demo e `companyId` nos dados antigos.
+2. Abra o app **online** (Wi‑Fi/dados) na v0.3.35+ — na abertura o app roda `ensureSeedData`: cria contas demo, empresas e preenche `companyId` nos dados antigos (principal = `default`). A primeira abertura pode demorar alguns segundos.
+3. Alternativa manual no PC: `dart run tool/seed_firebase.dart`
 
 Aguarde alguns minutos se o Firebase pedir indice composto (link no erro do console).
 

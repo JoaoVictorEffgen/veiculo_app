@@ -77,6 +77,10 @@ class AuthController extends StateNotifier<AuthSession> {
   Future<String?> login(String email, String password) async {
     final error = await _repository.login(email, password);
     state = AuthSession.ready(_repository.currentUser);
+    if (error == null) {
+      unawaited(_repository.ensureSeedData());
+      unawaited(_repository.repairLegacyTenantDataForSession());
+    }
     return error;
   }
 

@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/utils/iterable_extensions.dart';
 import '../../firebase_options.dart';
+import '../firebase/firebase_auth_helpers.dart';
 import '../firebase/firestore_paths.dart';
 import '../models/app_models.dart';
 import '../seed/app_seed_data.dart';
@@ -35,6 +36,40 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   String _companyIdFromData(Map<String, dynamic>? data) =>
       (data?['companyId'] as String?) ?? TenantIds.defaultCompany;
+
+  String? _ensureDocumentInActorCompany(AppUser actor, Map<String, dynamic>? data, String label) {
+    if (_companyIdFromData(data) != actor.companyId) {
+      return '$label nao pertence a sua empresa.';
+    }
+    return null;
+  }
+
+  Future<String?> _ensureAdminManagesUser(AppUser actor, String userId) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
+    final doc = await _firestore.collection(FirestorePaths.users).doc(userId).get();
+    if (!doc.exists) return 'Usuario nao encontrado.';
+    return _ensureDocumentInActorCompany(actor, doc.data(), 'Usuario');
+  }
+
+  Future<String?> _validateTargetDriver(AppUser actor, String? targetDriverId) async {
+    if (targetDriverId == null || targetDriverId.trim().isEmpty) return null;
+    final doc = await _firestore.collection(FirestorePaths.users).doc(targetDriverId).get();
+    if (!doc.exists) return 'Motorista selecionado nao encontrado.';
+    final data = doc.data()!;
+    final companyError = _ensureDocumentInActorCompany(actor, data, 'Motorista');
+    if (companyError != null) return companyError;
+    if (data['role'] != UserRole.driver.name) return 'Selecione um motorista valido.';
+    return null;
+  }
+
+  Future<String?> _ensureVehicleInUserCompany(AppUser user, String vehicleId) async {
+    final doc = await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).get();
+    if (!doc.exists) return 'Veiculo nao encontrado.';
+    if (_companyIdFromData(doc.data()) != user.companyId) {
+      return 'Este veiculo nao pertence a sua empresa.';
+    }
+    return null;
+  }
 
   @override
   AppUser? get currentUser => _cachedUser;
@@ -139,6 +174,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       final uid = credential.user!.uid;
       _cachedUser = await _loadAppUser(uid) ?? _appUserFromSeed(uid, normalizedEmail);
       if (_cachedUser == null) return 'Usuario sem cadastro no sistema.';
+      await _ensureUserProfileHasCompanyId(_cachedUser!);
       return null;
     } on FirebaseAuthException catch (error) {
       return _authErrorMessage(error);
@@ -151,17 +187,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
     if (normalized.isEmpty) return 'Informe o e-mail da sua conta.';
 
     try {
-      await _auth.sendPasswordResetEmail(email: normalized);
+      await sendPasswordResetEmailToAccount(_auth, normalized);
       return null;
     } on FirebaseAuthException catch (error) {
-      switch (error.code) {
-        case 'invalid-email':
-          return 'Informe um e-mail valido.';
-        case 'too-many-requests':
-          return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
-        default:
-          return error.message ?? 'Nao foi possivel enviar o e-mail de recuperacao.';
-      }
+      return passwordResetErrorMessage(error);
     }
   }
 
@@ -179,9 +208,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
           .where('companyId', isEqualTo: _sessionCompanyId)
           .orderBy('name')
           .snapshots()
-          .map(
-            (snapshot) => snapshot.docs.map(_vehicleFromDoc).toList(),
-          ),
+          .asyncMap(_mergeLegacyVehiclesIntoList),
     );
   }
 
@@ -193,7 +220,20 @@ class FirebaseVehicleRepository implements VehicleRepository {
         .where('companyId', isEqualTo: _sessionCompanyId)
         .orderBy('name')
         .get();
-    return snapshot.docs.map(_vehicleFromDoc).toList();
+    return _mergeLegacyVehiclesIntoList(snapshot);
+  }
+
+  Future<List<Vehicle>> _mergeLegacyVehiclesIntoList(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    final byId = {for (final doc in snapshot.docs) doc.id: _vehicleFromDoc(doc)};
+    if (_shouldIncludeLegacyTenantDocs()) {
+      for (final doc in await _loadLegacyDocs(FirestorePaths.vehicles)) {
+        byId.putIfAbsent(doc.id, () => _vehicleFromDoc(doc));
+      }
+    }
+    final list = byId.values.toList()..sort((a, b) => a.name.compareTo(b.name));
+    return list;
   }
 
   @override
@@ -220,9 +260,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
             .where('companyId', isEqualTo: _sessionCompanyId)
             .orderBy('name')
             .snapshots()
-            .map(
-              (snapshot) => snapshot.docs.map(_userFromDoc).toList(),
-            );
+            .asyncMap(_mergeLegacyUsersIntoList);
       }
       return _firestore.collection(FirestorePaths.users).doc(uid).snapshots().map(
             (snapshot) => snapshot.exists ? [_userFromDoc(snapshot)] : const <AppUser>[],
@@ -303,6 +341,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
       return 'A data de validade precisa ser futura.';
     }
 
+    final driverError = await _validateTargetDriver(actor, targetDriverId);
+    if (driverError != null) return driverError;
+
     try {
       await _firestore.collection(FirestorePaths.announcements).add({
         'message': text,
@@ -329,6 +370,11 @@ class FirebaseVehicleRepository implements VehicleRepository {
     if (actor.role != UserRole.admin) return 'Somente administradores podem remover tarefas.';
 
     try {
+      final doc = await _firestore.collection(FirestorePaths.announcements).doc(announcementId).get();
+      if (!doc.exists) return null;
+      final companyError = _ensureDocumentInActorCompany(actor, doc.data(), 'Tarefa');
+      if (companyError != null) return companyError;
+
       await _firestore.collection(FirestorePaths.announcements).doc(announcementId).delete();
       return null;
     } on FirebaseException catch (error) {
@@ -643,6 +689,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
     if (authUser.uid != driver.id) return 'Sessao invalida. Faca login novamente.';
 
     if (signatureBase64.trim().isEmpty) return 'Assine o checklist antes de concluir.';
+
+    final vehicleCompanyError = await _ensureVehicleInUserCompany(driver, vehicle.id);
+    if (vehicleCompanyError != null) return vehicleCompanyError;
 
     final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicle.id);
     final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
@@ -1162,7 +1211,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<String?> editDriver(AppUser actor, {required String driverId, required String name, required String email, String? password}) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
+    final accessError = await _ensureAdminManagesUser(actor, driverId);
+    if (accessError != null) return accessError;
     final trimmedName = name.trim();
     final normalizedEmail = email.trim().toLowerCase();
     try {
@@ -1190,7 +1240,12 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   Future<void> _propagateDriverProfileChange({required String driverId, required String name}) async {
     try {
-      final vehicles = await _firestore.collection(FirestorePaths.vehicles).where('currentDriverId', isEqualTo: driverId).get();
+      final companyId = _cachedUser?.companyId ?? TenantIds.defaultCompany;
+      final vehicles = await _firestore
+          .collection(FirestorePaths.vehicles)
+          .where('companyId', isEqualTo: companyId)
+          .where('currentDriverId', isEqualTo: driverId)
+          .get();
       for (final doc in vehicles.docs) {
         await doc.reference.update({'currentDriverName': name});
       }
@@ -1207,7 +1262,12 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   Future<void> _propagateVehicleNameChange({required String vehicleId, required String name}) async {
     try {
-      final tracks = await _firestore.collection(FirestorePaths.tracking).where('vehicleId', isEqualTo: vehicleId).get();
+      final companyId = _cachedUser?.companyId ?? TenantIds.defaultCompany;
+      final tracks = await _firestore
+          .collection(FirestorePaths.tracking)
+          .where('companyId', isEqualTo: companyId)
+          .where('vehicleId', isEqualTo: vehicleId)
+          .get();
       for (final doc in tracks.docs) {
         await doc.reference.update({'vehicleName': name});
       }
@@ -1218,14 +1278,75 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   @override
   Future<String?> deleteDriver(AppUser actor, String driverId) async {
-    if (actor.role != UserRole.admin) return 'Somente administradores podem alterar cadastros.';
+    final accessError = await _ensureAdminManagesUser(actor, driverId);
+    if (accessError != null) return accessError;
     try {
-      final vehicles = await _firestore.collection(FirestorePaths.vehicles).where('currentDriverId', isEqualTo: driverId).limit(1).get();
+      final vehicles = await _firestore
+          .collection(FirestorePaths.vehicles)
+          .where('companyId', isEqualTo: actor.companyId)
+          .where('currentDriverId', isEqualTo: driverId)
+          .limit(1)
+          .get();
       if (vehicles.docs.isNotEmpty) return 'Nao e possivel excluir um motorista que esta usando um veiculo.';
       await _firestore.collection(FirestorePaths.users).doc(driverId).delete();
       return null;
     } on FirebaseException catch (error) {
       return error.message;
+    }
+  }
+
+  bool _shouldIncludeLegacyTenantDocs() => _sessionCompanyId == TenantIds.defaultCompany;
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _loadLegacyDocs(String collection) async {
+    if (!_shouldIncludeLegacyTenantDocs()) return const [];
+    final snapshot = await _firestore.collection(collection).limit(500).get();
+    return snapshot.docs.where((doc) => !doc.data().containsKey('companyId')).toList();
+  }
+
+  Future<List<AppUser>> _mergeLegacyUsersIntoList(QuerySnapshot<Map<String, dynamic>> snapshot) async {
+    final byId = {for (final doc in snapshot.docs) doc.id: _userFromDoc(doc)};
+    for (final doc in await _loadLegacyDocs(FirestorePaths.users)) {
+      byId.putIfAbsent(doc.id, () => _userFromDoc(doc));
+    }
+    final list = byId.values.toList()..sort((a, b) => a.name.compareTo(b.name));
+    return list;
+  }
+
+  Future<void> _ensureUserProfileHasCompanyId(AppUser user) async {
+    try {
+      final ref = _firestore.collection(FirestorePaths.users).doc(user.id);
+      final doc = await ref.get();
+      if (!doc.exists) {
+        await ref.set({
+          'name': user.name,
+          'email': user.email,
+          'role': user.role.name,
+          'companyId': user.companyId,
+        }, SetOptions(merge: true));
+        return;
+      }
+      if (doc.data()?.containsKey('companyId') != true) {
+        await ref.set({'companyId': user.companyId}, SetOptions(merge: true));
+      }
+    } catch (error) {
+      debugPrint('ensureUserProfileHasCompanyId: $error');
+    }
+  }
+
+  @override
+  Future<void> repairLegacyTenantDataForSession() async {
+    final user = _cachedUser;
+    if (user == null || user.role != UserRole.admin) return;
+    if (user.companyId != TenantIds.defaultCompany) return;
+    try {
+      await _backfillMissingCompanyId(
+        _firestore,
+        secondaryAuth: _auth,
+        trackingUsesCurrentSession: true,
+      );
+      debugPrint('repairLegacyTenantData: concluido para empresa principal.');
+    } catch (error, stackTrace) {
+      debugPrint('repairLegacyTenantData: $error\n$stackTrace');
     }
   }
 
@@ -1236,15 +1357,21 @@ class FirebaseVehicleRepository implements VehicleRepository {
       final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
       final secondaryFirestore = FirebaseFirestore.instanceFor(app: secondaryApp);
 
+      for (final seed in _seedUsers) {
+        await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
+      }
+
+      final signedInForFirestore = await _signInSeedAdminForFirestore(secondaryAuth);
+      if (!signedInForFirestore) {
+        debugPrint('Seed Firebase: nao foi possivel autenticar admin de seed; pulando Firestore.');
+        return;
+      }
+
       for (final company in AppSeedData.companies) {
         await secondaryFirestore.collection(FirestorePaths.companies).doc(company.id).set(
           {'name': company.name, 'active': true},
           SetOptions(merge: true),
         );
-      }
-
-      for (final seed in _seedUsers) {
-        await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
       }
 
       final batch = secondaryFirestore.batch();
@@ -1266,12 +1393,36 @@ class FirebaseVehicleRepository implements VehicleRepository {
         debugPrint('Seed Firebase: $upsertVehicles veiculo(s) de teste sincronizado(s).');
       }
 
-      await _backfillMissingCompanyId(secondaryFirestore);
+      await _backfillMissingCompanyId(
+        secondaryFirestore,
+        secondaryAuth: secondaryAuth,
+        trackingUsesCurrentSession: false,
+      );
+      debugPrint('Seed Firebase: concluido.');
     } catch (error, stackTrace) {
       debugPrint('Seed Firebase: $error\n$stackTrace');
     } finally {
       await secondaryApp.delete();
     }
+  }
+
+  Future<bool> _signInSeedAdminForFirestore(FirebaseAuth secondaryAuth) async {
+    final adminEmails = _seedUsers
+        .where((item) => item.role == UserRole.admin)
+        .map((item) => item.email)
+        .toList();
+    for (final email in adminEmails) {
+      try {
+        await secondaryAuth.signInWithEmailAndPassword(
+          email: email,
+          password: AppSeedData.defaultPassword,
+        );
+        return true;
+      } on FirebaseAuthException catch (error) {
+        debugPrint('Seed Firebase: login $email falhou (${error.code}).');
+      }
+    }
+    return false;
   }
 
   Future<void> _ensureAuthUserWithSecondary(
@@ -1295,11 +1446,20 @@ class FirebaseVehicleRepository implements VehicleRepository {
       return;
     } on FirebaseAuthException catch (error) {
       if (error.code != 'email-already-in-use') rethrow;
-      final credential = await secondaryAuth.signInWithEmailAndPassword(
-        email: seed.email,
-        password: seed.password,
-      );
-      uid = credential.user!.uid;
+      try {
+        final credential = await secondaryAuth.signInWithEmailAndPassword(
+          email: seed.email,
+          password: seed.password,
+        );
+        uid = credential.user!.uid;
+      } on FirebaseAuthException catch (signInError) {
+        if (signInError.code == 'wrong-password' || signInError.code == 'invalid-credential') {
+          debugPrint('Seed Firebase: ${seed.email} ja existe com outra senha; atualizando perfil no Firestore.');
+          await _mergeSeedUserProfileByEmail(secondaryFirestore, seed);
+          return;
+        }
+        rethrow;
+      }
     }
 
     final ref = secondaryFirestore.collection(FirestorePaths.users).doc(uid);
@@ -1337,7 +1497,29 @@ class FirebaseVehicleRepository implements VehicleRepository {
     });
   }
 
-  Future<void> _backfillMissingCompanyId(FirebaseFirestore firestore) async {
+  Future<void> _mergeSeedUserProfileByEmail(FirebaseFirestore firestore, SeedUser seed) async {
+    final matches = await firestore
+        .collection(FirestorePaths.users)
+        .where('email', isEqualTo: seed.email)
+        .limit(1)
+        .get();
+    if (matches.docs.isEmpty) {
+      debugPrint('Seed Firebase: perfil Firestore ausente para ${seed.email}.');
+      return;
+    }
+    await matches.docs.first.reference.set({
+      'name': seed.name,
+      'email': seed.email,
+      'role': seed.role.name,
+      'companyId': seed.companyId,
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> _backfillMissingCompanyId(
+    FirebaseFirestore firestore, {
+    required FirebaseAuth secondaryAuth,
+    required bool trackingUsesCurrentSession,
+  }) async {
     const collections = [
       FirestorePaths.vehicles,
       FirestorePaths.announcements,
@@ -1348,34 +1530,115 @@ class FirebaseVehicleRepository implements VehicleRepository {
     ];
 
     for (final collection in collections) {
-      final snapshot = await firestore.collection(collection).limit(500).get();
-      if (snapshot.docs.isEmpty) continue;
+      await _backfillCompanyIdOnCollection(firestore, collection);
+    }
 
-      final batch = firestore.batch();
-      var updates = 0;
+    await _backfillCompanyIdOnCollection(firestore, FirestorePaths.users);
+    if (trackingUsesCurrentSession) {
+      final tenantId = _cachedUser?.companyId ?? TenantIds.defaultCompany;
+      await _backfillCompanyIdOnCollection(
+        firestore,
+        FirestorePaths.tracking,
+        companyIdForDoc: (doc) => _companyIdForTrackingDoc(firestore, doc),
+        onlyCompanyId: tenantId,
+      );
+    } else {
+      await _backfillTrackingPerAdmin(firestore, secondaryAuth: secondaryAuth);
+    }
+  }
+
+  Future<void> _backfillTrackingPerAdmin(
+    FirebaseFirestore firestore, {
+    required FirebaseAuth? secondaryAuth,
+  }) async {
+    final adminSeeds = _seedUsers.where((item) => item.role == UserRole.admin).toList();
+    for (final adminSeed in adminSeeds) {
+      if (secondaryAuth != null) {
+        try {
+          await secondaryAuth.signInWithEmailAndPassword(
+            email: adminSeed.email,
+            password: AppSeedData.defaultPassword,
+          );
+        } on FirebaseAuthException {
+          continue;
+        }
+      }
+      await _backfillCompanyIdOnCollection(
+        firestore,
+        FirestorePaths.tracking,
+        companyIdForDoc: (doc) => _companyIdForTrackingDoc(firestore, doc),
+        onlyCompanyId: adminSeed.companyId,
+      );
+    }
+  }
+
+  Future<String> _companyIdForTrackingDoc(FirebaseFirestore firestore, QueryDocumentSnapshot<Map<String, dynamic>> doc) async {
+    final driverId = doc.id;
+    try {
+      final userDoc = await firestore.collection(FirestorePaths.users).doc(driverId).get();
+      if (userDoc.exists) {
+        return _companyIdFromData(userDoc.data());
+      }
+    } catch (_) {}
+    return TenantIds.defaultCompany;
+  }
+
+  Future<void> _backfillCompanyIdOnCollection(
+    FirebaseFirestore firestore,
+    String collection, {
+    Future<String> Function(QueryDocumentSnapshot<Map<String, dynamic>> doc)? companyIdForDoc,
+    String? onlyCompanyId,
+  }) async {
+    const pageSize = 200;
+    DocumentSnapshot<Map<String, dynamic>>? cursor;
+    var totalUpdates = 0;
+
+    while (true) {
+      Query<Map<String, dynamic>> query = firestore.collection(collection).limit(pageSize);
+      if (cursor != null) {
+        query = query.startAfterDocument(cursor);
+      }
+      final snapshot = await query.get();
+      if (snapshot.docs.isEmpty) break;
+
+      var batch = firestore.batch();
+      var batchCount = 0;
+
       for (final doc in snapshot.docs) {
         if (doc.data().containsKey('companyId')) continue;
-        batch.update(doc.reference, {'companyId': TenantIds.defaultCompany});
-        updates++;
+        final companyId = companyIdForDoc != null
+            ? await companyIdForDoc(doc)
+            : _companyIdFromSeedEmail(doc.data()['email'] as String?) ?? TenantIds.defaultCompany;
+        if (onlyCompanyId != null && companyId != onlyCompanyId) continue;
+        batch.update(doc.reference, {'companyId': companyId});
+        batchCount++;
+        totalUpdates++;
+
+        if (batchCount >= 400) {
+          await batch.commit();
+          batch = firestore.batch();
+          batchCount = 0;
+        }
       }
-      if (updates > 0) {
+
+      if (batchCount > 0) {
         await batch.commit();
-        debugPrint('Backfill companyId: $updates doc(s) em $collection');
       }
+
+      cursor = snapshot.docs.last;
+      if (snapshot.docs.length < pageSize) break;
     }
 
-    final users = await firestore.collection(FirestorePaths.users).limit(500).get();
-    final userBatch = firestore.batch();
-    var userUpdates = 0;
-    for (final doc in users.docs) {
-      if (doc.data().containsKey('companyId')) continue;
-      userBatch.update(doc.reference, {'companyId': TenantIds.defaultCompany});
-      userUpdates++;
+    if (totalUpdates > 0) {
+      debugPrint('Backfill companyId: $totalUpdates doc(s) em $collection');
     }
-    if (userUpdates > 0) {
-      await userBatch.commit();
-      debugPrint('Backfill companyId: $userUpdates usuario(s)');
-    }
+  }
+
+  String? _companyIdFromSeedEmail(String? email) {
+    if (email == null || email.isEmpty) return null;
+    final normalized = email.trim().toLowerCase();
+    final seed = _seedUsers.where((item) => item.email == normalized).firstOrNull;
+    return seed?.companyId;
   }
 
   Future<UserCredential> _createAuthUserWithoutSwitchingSession({required String email, required String password}) async {

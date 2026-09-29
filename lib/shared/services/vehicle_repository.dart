@@ -101,4 +101,7 @@ abstract class VehicleRepository {
   Future<void> purgeOrphanedTracking(List<String> driverIds);
 
   Future<void> ensureSeedData();
+
+  /// Preenche `companyId` em documentos antigos (empresa principal) e cria contas demo.
+  Future<void> repairLegacyTenantDataForSession();
 }

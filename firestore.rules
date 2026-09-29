@@ -178,9 +178,17 @@ service cloud.firestore {
         || (isSignedIn() && checklistId.matches('^' + request.auth.uid + '_.*'));
     }
 
+    function isBootstrapCompanyId(id) {
+      return id == 'default' || id == 'empresa-demo';
+    }
+
     match /companies/{companyId} {
       allow read: if isSignedIn() && companyId == userCompanyId();
-      allow write: if false;
+      allow create, update: if isAdmin()
+        && isBootstrapCompanyId(companyId)
+        && request.resource.data.keys().hasOnly(['name', 'active'])
+        && request.resource.data.active == true;
+      allow delete: if false;
     }
 
     match /users/{userId} {

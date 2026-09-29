@@ -131,7 +131,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Enviamos um link de recuperacao para $email. Verifique sua caixa de entrada.'),
+        content: Text(
+          'Enviamos um link de recuperacao para $email. Verifique a caixa de entrada e o spam (remetente Firebase).',
+        ),
       ),
     );
   }
