@@ -156,8 +156,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
       final uid = credential.user!.uid;
       _cachedUser = await _loadAppUser(uid) ?? await _recoverAdminProfile(uid, normalizedEmail);
       if (_cachedUser == null) {
-        return 'Perfil incompleto no Firestore. Publique as regras (firebase deploy --only firestore:rules) '
-            'e tente de novo, ou apague este e-mail em Authentication e use "Criar empresa" novamente.';
+        return 'Nao foi possivel vincular sua conta aos dados da empresa. '
+            'Apague este e-mail em Firebase Authentication e use "Criar empresa" de novo.';
       }
       await _ensureUserProfileHasCompanyId(_cachedUser!);
       return null;
@@ -231,29 +231,44 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
   Future<AppUser?> _recoverAdminProfile(String uid, String normalizedEmail) async {
     try {
-      final companies = await _firestore
-          .collection(FirestorePaths.companies)
-          .where('ownerId', isEqualTo: uid)
-          .limit(1)
-          .get();
-      if (companies.docs.isEmpty) return null;
-
-      final companyId = companies.docs.first.id;
-      final existingUser = await _firestore.collection(FirestorePaths.users).doc(uid).get();
+      final userRef = _firestore.collection(FirestorePaths.users).doc(uid);
+      final existingUser = await userRef.get();
       if (existingUser.exists) {
         return _userFromDoc(existingUser);
       }
 
-      final fallbackName = normalizedEmail.split('@').first;
-      await _firestore.collection(FirestorePaths.users).doc(uid).set({
-        'name': fallbackName,
+      var companies = await _firestore
+          .collection(FirestorePaths.companies)
+          .where('ownerId', isEqualTo: uid)
+          .limit(1)
+          .get();
+
+      late String companyId;
+      if (companies.docs.isEmpty) {
+        final companyName = _defaultCompanyNameFromEmail(normalizedEmail);
+        companyId = _generateCompanyId(companyName);
+        await _firestore.collection(FirestorePaths.companies).doc(companyId).set({
+          'name': companyName,
+          'active': true,
+          'ownerId': uid,
+          'plan': 'trial',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        debugPrint('recoverAdminProfile: empresa $companyId criada para conta orfa.');
+      } else {
+        companyId = companies.docs.first.id;
+      }
+
+      final adminName = _defaultAdminNameFromEmail(normalizedEmail);
+      await userRef.set({
+        'name': adminName,
         'email': normalizedEmail,
         'role': UserRole.admin.name,
         'companyId': companyId,
       });
       return AppUser(
         id: uid,
-        name: fallbackName,
+        name: adminName,
         email: normalizedEmail,
         password: '',
         role: UserRole.admin,
@@ -264,6 +279,14 @@ class FirebaseVehicleRepository implements VehicleRepository {
       return null;
     }
   }
+
+  String _defaultCompanyNameFromEmail(String email) {
+    final local = email.split('@').first.trim();
+    if (local.isEmpty) return 'Minha Empresa';
+    return local[0].toUpperCase() + local.substring(1);
+  }
+
+  String _defaultAdminNameFromEmail(String email) => _defaultCompanyNameFromEmail(email);
 
   String _generateCompanyId(String companyName) {
     final base = companyName
