@@ -12,6 +12,7 @@ import '../../firebase_options.dart';
 import '../firebase/firestore_paths.dart';
 import '../models/app_models.dart';
 import '../seed/app_seed_data.dart';
+import '../tenant/tenant_ids.dart';
 import 'vehicle_maintenance_plan_codec.dart';
 import 'vehicle_repository.dart';
 
@@ -28,7 +29,12 @@ class FirebaseVehicleRepository implements VehicleRepository {
   AppUser? _cachedUser;
 
   static const _seedUsers = AppSeedData.users;
-  static const _seedVehicles = AppSeedData.vehicles;
+  static const _seedVehicles = AppSeedData.seedVehicles;
+
+  String get _sessionCompanyId => _cachedUser?.companyId ?? TenantIds.defaultCompany;
+
+  String _companyIdFromData(Map<String, dynamic>? data) =>
+      (data?['companyId'] as String?) ?? TenantIds.defaultCompany;
 
   @override
   AppUser? get currentUser => _cachedUser;
@@ -168,7 +174,12 @@ class FirebaseVehicleRepository implements VehicleRepository {
   @override
   Stream<List<Vehicle>> watchVehicles() {
     return _liveQuery(
-      () => _firestore.collection(FirestorePaths.vehicles).orderBy('name').snapshots().map(
+      () => _firestore
+          .collection(FirestorePaths.vehicles)
+          .where('companyId', isEqualTo: _sessionCompanyId)
+          .orderBy('name')
+          .snapshots()
+          .map(
             (snapshot) => snapshot.docs.map(_vehicleFromDoc).toList(),
           ),
     );
@@ -177,7 +188,11 @@ class FirebaseVehicleRepository implements VehicleRepository {
   @override
   Future<List<Vehicle>> fetchVehicles() async {
     if (_auth.currentUser == null) return const [];
-    final snapshot = await _firestore.collection(FirestorePaths.vehicles).orderBy('name').get();
+    final snapshot = await _firestore
+        .collection(FirestorePaths.vehicles)
+        .where('companyId', isEqualTo: _sessionCompanyId)
+        .orderBy('name')
+        .get();
     return snapshot.docs.map(_vehicleFromDoc).toList();
   }
 
@@ -186,7 +201,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
     return _liveQuery(() {
       final uid = _auth.currentUser!.uid;
       final query = _isAdminSession
-          ? _firestore.collection(FirestorePaths.movements).orderBy('createdAt', descending: true)
+          ? _firestore
+              .collection(FirestorePaths.movements)
+              .where('companyId', isEqualTo: _sessionCompanyId)
+              .orderBy('createdAt', descending: true)
           : _firestore.collection(FirestorePaths.movements).where('driverId', isEqualTo: uid).orderBy('createdAt', descending: true);
       return query.snapshots().map((snapshot) => snapshot.docs.map(_movementFromDoc).toList());
     });
@@ -197,7 +215,12 @@ class FirebaseVehicleRepository implements VehicleRepository {
     return _liveQuery(() {
       final uid = _auth.currentUser!.uid;
       if (_isAdminSession) {
-        return _firestore.collection(FirestorePaths.users).orderBy('name').snapshots().map(
+        return _firestore
+            .collection(FirestorePaths.users)
+            .where('companyId', isEqualTo: _sessionCompanyId)
+            .orderBy('name')
+            .snapshots()
+            .map(
               (snapshot) => snapshot.docs.map(_userFromDoc).toList(),
             );
       }
@@ -212,7 +235,11 @@ class FirebaseVehicleRepository implements VehicleRepository {
     return _liveQuery(() {
       final uid = _auth.currentUser!.uid;
       if (_isAdminSession) {
-        return _firestore.collection(FirestorePaths.tracking).snapshots().map(
+        return _firestore
+            .collection(FirestorePaths.tracking)
+            .where('companyId', isEqualTo: _sessionCompanyId)
+            .snapshots()
+            .map(
               (snapshot) => snapshot.docs.map(_trackFromDoc).toList(),
             );
       }
@@ -228,6 +255,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
     return _firestore
         .collection(FirestorePaths.announcements)
+        .where('companyId', isEqualTo: user.companyId)
         .where('active', isEqualTo: true)
         .orderBy('createdAt', descending: true)
         .snapshots()
@@ -281,6 +309,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'createdAt': FieldValue.serverTimestamp(),
         'createdById': actor.id,
         'createdByName': actor.name,
+        'companyId': actor.companyId,
         'active': true,
         if (expiresAt != null) 'expiresAt': Timestamp.fromDate(expiresAt),
         if (targetDriverId != null) 'targetDriverId': targetDriverId,
@@ -325,6 +354,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
       if (!doc.exists) throw StateError('Tarefa nao encontrada.');
 
       final announcement = _announcementFromDoc(doc);
+      if (_companyIdFromData(doc.data()) != driver.companyId) {
+        throw StateError('Esta tarefa nao pertence a sua empresa.');
+      }
       if (announcement.isExpired) throw StateError('Esta tarefa expirou.');
       if (!announcement.isAvailableToStart) {
         if (announcement.isInProgress) {
@@ -385,6 +417,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
         }
 
         final announcement = _announcementFromDoc(doc);
+        if (_companyIdFromData(doc.data()) != driver.companyId) {
+          throw StateError('Esta tarefa nao pertence a sua empresa.');
+        }
         if (announcement.isExpired) throw StateError('Esta tarefa expirou.');
 
         if (announcement.isGroupTask) {
@@ -420,6 +455,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
           'driverId': authUid,
           'driverName': driver.name,
           'message': announcement.message,
+          'companyId': driver.companyId,
           'responseStatus': status.name,
           'isGroupTask': announcement.isGroupTask,
           if (status == AnnouncementResponseStatus.rejected) 'rejectionReason': rejectionReason!.trim(),
@@ -451,6 +487,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
     return _liveQuery(
       () => _firestore
           .collection(FirestorePaths.adminAlerts)
+          .where('companyId', isEqualTo: _sessionCompanyId)
           .orderBy('createdAt', descending: true)
           .snapshots()
           .map((snapshot) => snapshot.docs.map(_adminAlertFromDoc).toList()),
@@ -463,6 +500,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
     final unread = await _firestore
         .collection(FirestorePaths.adminAlerts)
+        .where('companyId', isEqualTo: admin.companyId)
         .where('viewed', isEqualTo: false)
         .get();
 
@@ -493,6 +531,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       await _firestore.collection(FirestorePaths.driverReports).add({
         'driverId': driver.id,
         'driverName': driver.name,
+        'companyId': driver.companyId,
         'message': trimmed,
         if (vehicleId != null) 'vehicleId': vehicleId,
         if (vehicleName != null) 'vehicleName': vehicleName,
@@ -509,7 +548,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
     if (_auth.currentUser == null) return Stream.value(const <DriverIssueReport>[]);
 
     final query = user.role == UserRole.admin
-        ? _firestore.collection(FirestorePaths.driverReports)
+        ? _firestore.collection(FirestorePaths.driverReports).where('companyId', isEqualTo: user.companyId)
         : _firestore.collection(FirestorePaths.driverReports).where('driverId', isEqualTo: user.id);
 
     return query.snapshots().map((snapshot) {
@@ -616,6 +655,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         transaction.set(docRef, {
           'driverId': driver.id,
           'driverName': driver.name,
+          'companyId': driver.companyId,
           'vehicleId': vehicle.id,
           'vehicleName': vehicle.name,
           'vehiclePlate': vehicle.plate,
@@ -648,7 +688,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
     if (_auth.currentUser == null) return Stream.value(const <VehicleChecklist>[]);
 
     final query = user.role == UserRole.admin
-        ? _firestore.collection(FirestorePaths.vehicleChecklists)
+        ? _firestore.collection(FirestorePaths.vehicleChecklists).where('companyId', isEqualTo: user.companyId)
         : _firestore.collection(FirestorePaths.vehicleChecklists).where('driverId', isEqualTo: user.id);
 
     return query.snapshots().map((snapshot) {
@@ -667,6 +707,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
     final activeVehicles = await _firestore
         .collection(FirestorePaths.vehicles)
+        .where('companyId', isEqualTo: user.companyId)
         .where('currentDriverId', isEqualTo: driverId)
         .get();
     for (final doc in activeVehicles.docs) {
@@ -682,6 +723,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
         final vehicleSnap = await transaction.get(vehicleRef);
         if (!vehicleSnap.exists) throw StateError('Veiculo nao encontrado.');
         final current = _vehicleFromDoc(vehicleSnap);
+        if (_companyIdFromData(vehicleSnap.data()) != user.companyId) {
+          throw StateError('Este veiculo nao pertence a sua empresa.');
+        }
         if (current.status == VehicleStatus.moving) {
           final since = _formatTime(current.startedAt);
           throw StateError('Veiculo indisponivel: ${current.name} esta em uso por ${current.currentDriverName} desde $since.');
@@ -703,6 +747,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
           'vehicleName': current.name,
           'driverId': driverId,
           'driverName': user.name,
+          'companyId': user.companyId,
           'action': MovementAction.on.name,
           'createdAt': now,
           'location': null,
@@ -753,6 +798,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
         final vehicleSnap = await transaction.get(vehicleRef);
         if (!vehicleSnap.exists) throw StateError('Veiculo nao encontrado.');
         final current = _vehicleFromDoc(vehicleSnap);
+        if (_companyIdFromData(vehicleSnap.data()) != user.companyId) {
+          throw StateError('Este veiculo nao pertence a sua empresa.');
+        }
         if (current.status == VehicleStatus.stopped) throw StateError('Este veiculo ja esta parado.');
         if (current.currentDriverId != driverId) {
           throw StateError('Somente o motorista responsavel pode parar o veiculo.');
@@ -780,6 +828,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
           'vehicleName': current.name,
           'driverId': driverId,
           'driverName': user.name,
+          'companyId': user.companyId,
           'action': MovementAction.off.name,
           'createdAt': now,
           'location': location.trim(),
@@ -831,6 +880,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'name': name.trim(),
         'model': model.trim(),
         'plate': plate.trim().toUpperCase(),
+        'companyId': actor.companyId,
         'status': VehicleStatus.stopped.name,
         'currentDriverId': null,
         'currentDriverName': null,
@@ -1100,6 +1150,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'name': name.trim(),
         'email': email.trim().toLowerCase(),
         'role': UserRole.driver.name,
+        'companyId': actor.companyId,
       });
       return null;
     } on FirebaseAuthException catch (error) {
@@ -1128,6 +1179,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
           email: normalizedEmail,
           password: '',
           role: _cachedUser!.role,
+          companyId: _cachedUser!.companyId,
         );
       }
       return null;
@@ -1184,29 +1236,37 @@ class FirebaseVehicleRepository implements VehicleRepository {
       final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
       final secondaryFirestore = FirebaseFirestore.instanceFor(app: secondaryApp);
 
-      final adminSeed = _seedUsers.firstWhere((seed) => seed.role == UserRole.admin);
-      await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, adminSeed);
-
-      await secondaryAuth.signInWithEmailAndPassword(email: adminSeed.email, password: adminSeed.password);
+      for (final company in AppSeedData.companies) {
+        await secondaryFirestore.collection(FirestorePaths.companies).doc(company.id).set(
+          {'name': company.name, 'active': true},
+          SetOptions(merge: true),
+        );
+      }
 
       for (final seed in _seedUsers) {
         await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
       }
 
       final batch = secondaryFirestore.batch();
-      var createdVehicles = 0;
-      for (final vehicle in _seedVehicles) {
-        final ref = secondaryFirestore.collection(FirestorePaths.vehicles).doc(vehicle.id);
-        final snap = await ref.get();
-        if (!snap.exists) {
-          batch.set(ref, _vehicleToMap(vehicle));
-          createdVehicles++;
-        }
+      var upsertVehicles = 0;
+      for (final seedVehicle in _seedVehicles) {
+        final ref = secondaryFirestore.collection(FirestorePaths.vehicles).doc(seedVehicle.id);
+        batch.set(
+          ref,
+          {
+            ..._vehicleToMap(seedVehicle.vehicle),
+            'companyId': seedVehicle.companyId,
+          },
+          SetOptions(merge: true),
+        );
+        upsertVehicles++;
       }
-      if (createdVehicles > 0) {
+      if (upsertVehicles > 0) {
         await batch.commit();
-        debugPrint('Seed Firebase: $createdVehicles veiculo(s) de teste criado(s).');
+        debugPrint('Seed Firebase: $upsertVehicles veiculo(s) de teste sincronizado(s).');
       }
+
+      await _backfillMissingCompanyId(secondaryFirestore);
     } catch (error, stackTrace) {
       debugPrint('Seed Firebase: $error\n$stackTrace');
     } finally {
@@ -1230,6 +1290,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'name': seed.name,
         'email': seed.email,
         'role': seed.role.name,
+        'companyId': seed.companyId,
       });
       return;
     } on FirebaseAuthException catch (error) {
@@ -1248,6 +1309,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'name': seed.name,
         'email': seed.email,
         'role': seed.role.name,
+        'companyId': seed.companyId,
       }, SetOptions(merge: true));
       return;
     }
@@ -1258,17 +1320,62 @@ class FirebaseVehicleRepository implements VehicleRepository {
         'name': seed.name,
         'email': seed.email,
         'role': seed.role.name,
+        'companyId': seed.companyId,
       });
       return;
     }
 
-    final adminSeed = _seedUsers.firstWhere((item) => item.role == UserRole.admin);
-    await secondaryAuth.signInWithEmailAndPassword(email: adminSeed.email, password: adminSeed.password);
+    final companyAdmin = _seedUsers.firstWhere(
+      (item) => item.role == UserRole.admin && item.companyId == seed.companyId,
+    );
+    await secondaryAuth.signInWithEmailAndPassword(email: companyAdmin.email, password: companyAdmin.password);
     await ref.set({
       'name': seed.name,
       'email': seed.email,
       'role': seed.role.name,
+      'companyId': seed.companyId,
     });
+  }
+
+  Future<void> _backfillMissingCompanyId(FirebaseFirestore firestore) async {
+    const collections = [
+      FirestorePaths.vehicles,
+      FirestorePaths.announcements,
+      FirestorePaths.movements,
+      FirestorePaths.adminAlerts,
+      FirestorePaths.driverReports,
+      FirestorePaths.vehicleChecklists,
+    ];
+
+    for (final collection in collections) {
+      final snapshot = await firestore.collection(collection).limit(500).get();
+      if (snapshot.docs.isEmpty) continue;
+
+      final batch = firestore.batch();
+      var updates = 0;
+      for (final doc in snapshot.docs) {
+        if (doc.data().containsKey('companyId')) continue;
+        batch.update(doc.reference, {'companyId': TenantIds.defaultCompany});
+        updates++;
+      }
+      if (updates > 0) {
+        await batch.commit();
+        debugPrint('Backfill companyId: $updates doc(s) em $collection');
+      }
+    }
+
+    final users = await firestore.collection(FirestorePaths.users).limit(500).get();
+    final userBatch = firestore.batch();
+    var userUpdates = 0;
+    for (final doc in users.docs) {
+      if (doc.data().containsKey('companyId')) continue;
+      userBatch.update(doc.reference, {'companyId': TenantIds.defaultCompany});
+      userUpdates++;
+    }
+    if (userUpdates > 0) {
+      await userBatch.commit();
+      debugPrint('Backfill companyId: $userUpdates usuario(s)');
+    }
   }
 
   Future<UserCredential> _createAuthUserWithoutSwitchingSession({required String email, required String password}) async {
@@ -1299,6 +1406,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       email: normalizedEmail,
       password: '',
       role: seed.role,
+      companyId: seed.companyId,
     );
   }
 
@@ -1339,6 +1447,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       email: data['email'] as String,
       password: '',
       role: UserRole.values.byName(data['role'] as String),
+      companyId: _companyIdFromData(data),
     );
   }
 

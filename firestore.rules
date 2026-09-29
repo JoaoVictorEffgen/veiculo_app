@@ -14,6 +14,22 @@ service cloud.firestore {
       return isSignedIn() && userDoc().role == 'admin';
     }
 
+    function userCompanyId() {
+      return userDoc().get('companyId', 'default');
+    }
+
+    function sameCompany(data) {
+      return data.get('companyId', 'default') == userCompanyId();
+    }
+
+    function sameCompanyResource() {
+      return sameCompany(resource.data);
+    }
+
+    function sameCompanyRequest() {
+      return sameCompany(request.resource.data);
+    }
+
     function isOwnFcmTokenUpdate(userId) {
       return isSignedIn()
         && request.auth.uid == userId
@@ -28,6 +44,8 @@ service cloud.firestore {
 
     function canOperateVehicle() {
       return isSignedIn()
+        && sameCompanyResource()
+        && sameCompanyRequest()
         && vehicleIdentityUnchanged()
         && (
           (resource.data.status == 'stopped'
@@ -53,6 +71,8 @@ service cloud.firestore {
 
     function isDriverStartingTask() {
       return isSignedIn()
+        && sameCompanyResource()
+        && sameCompanyRequest()
         && announcementIsActive(resource.data)
         && resource.data.get('responseStatus', null) == null
         && resource.data.get('startedById', null) == null
@@ -68,6 +88,8 @@ service cloud.firestore {
 
     function isDriverAnnouncementResponse() {
       return isSignedIn()
+        && sameCompanyResource()
+        && sameCompanyRequest()
         && resource.data.targetDriverId == request.auth.uid
         && resource.data.get('responseStatus', null) == null
         && announcementIsActive(resource.data)
@@ -98,6 +120,8 @@ service cloud.firestore {
 
     function isDriverCompletingGroupTaskUpdate() {
       return isSignedIn()
+        && sameCompanyResource()
+        && sameCompanyRequest()
         && isGroupAnnouncementData(resource.data)
         && announcementIsActive(resource.data)
         && resource.data.get('responseStatus', null) == null
@@ -117,6 +141,7 @@ service cloud.firestore {
     function isDriverAdminAlertCreate() {
       return isSignedIn()
         && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.get('companyId', 'default') == userCompanyId()
         && request.resource.data.driverName is string
         && request.resource.data.message is string
         && request.resource.data.announcementId is string
@@ -133,6 +158,7 @@ service cloud.firestore {
     function isDriverChecklistCreate(checklistId) {
       return isSignedIn()
         && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.get('companyId', 'default') == userCompanyId()
         && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate
         && request.resource.data.checklistDate is string
         && request.resource.data.vehicleId is string
@@ -147,57 +173,71 @@ service cloud.firestore {
     }
 
     function canReadChecklist(checklistId) {
-      return isAdmin()
-        || (isSignedIn() && resource.data.driverId == request.auth.uid)
+      return (isAdmin() && sameCompanyResource())
+        || (isSignedIn() && resource.data.driverId == request.auth.uid && sameCompanyResource())
         || (isSignedIn() && checklistId.matches('^' + request.auth.uid + '_.*'));
     }
 
+    match /companies/{companyId} {
+      allow read: if isSignedIn() && companyId == userCompanyId();
+      allow write: if false;
+    }
+
     match /users/{userId} {
-      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
-      allow create: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
-      allow update: if isAdmin() || isOwnFcmTokenUpdate(userId);
-      allow delete: if isAdmin();
+      allow read: if isSignedIn()
+        && (request.auth.uid == userId || (isAdmin() && sameCompanyResource()));
+      allow create: if isAdmin() && sameCompanyRequest()
+        || (isSignedIn() && request.auth.uid == userId && sameCompanyRequest());
+      allow update: if (isAdmin() && sameCompanyResource() && sameCompanyRequest())
+        || isOwnFcmTokenUpdate(userId);
+      allow delete: if isAdmin() && sameCompanyResource();
     }
 
     match /vehicles/{vehicleId} {
-      allow read: if isSignedIn();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || canOperateVehicle();
+      allow read: if isSignedIn() && sameCompanyResource();
+      allow create, delete: if isAdmin() && sameCompanyRequest();
+      allow update: if (isAdmin() && sameCompanyResource() && sameCompanyRequest()) || canOperateVehicle();
 
       match /maintenance_chunks/{chunkId} {
-        allow read: if isSignedIn();
-        allow write: if isAdmin();
+        allow read: if isSignedIn() && sameCompany(get(/databases/$(database)/documents/vehicles/$(vehicleId)).data);
+        allow write: if isAdmin() && sameCompany(get(/databases/$(database)/documents/vehicles/$(vehicleId)).data);
       }
 
       match /maintenance_logs/{logId} {
-        allow read: if isSignedIn();
-        allow create, update, delete: if isAdmin();
+        allow read: if isSignedIn() && sameCompany(get(/databases/$(database)/documents/vehicles/$(vehicleId)).data);
+        allow create, update, delete: if isAdmin() && sameCompany(get(/databases/$(database)/documents/vehicles/$(vehicleId)).data);
       }
     }
 
     match /movements/{movementId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.driverId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow read: if isSignedIn()
+        && ((isAdmin() && sameCompanyResource()) || resource.data.driverId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.driverId == request.auth.uid
+        && sameCompanyRequest();
+      allow update, delete: if isAdmin() && sameCompanyResource();
     }
 
     match /tracking/{driverId} {
-      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == driverId);
-      allow create, update: if isSignedIn() && request.auth.uid == driverId;
-      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == driverId);
+      allow read: if isSignedIn()
+        && ((isAdmin() && sameCompanyResource()) || request.auth.uid == driverId);
+      allow create, update: if isSignedIn()
+        && request.auth.uid == driverId
+        && sameCompanyRequest();
+      allow delete: if (isAdmin() && sameCompanyResource()) || (isSignedIn() && request.auth.uid == driverId);
     }
 
     match /announcements/{announcementId} {
-      allow read: if isSignedIn();
-      allow create: if isAdmin();
+      allow read: if isSignedIn() && sameCompanyResource();
+      allow create: if isAdmin() && sameCompanyRequest();
       allow update: if isAdmin() || isDriverStartingTask() || isDriverAnnouncementResponse() || isDriverCompletingGroupTaskUpdate();
       allow delete: if isAdmin() || (isSignedIn() && isExpiredAnnouncement()) || isDriverDeletingOwnReminder() || isDriverCompletingGroupTask();
     }
 
     match /admin_alerts/{alertId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() && sameCompanyResource();
       allow create: if isDriverAdminAlertCreate();
-      allow update, delete: if isAdmin();
+      allow update, delete: if isAdmin() && sameCompanyResource();
     }
 
     match /vehicle_checklists/{checklistId} {
@@ -208,13 +248,15 @@ service cloud.firestore {
     }
 
     match /driver_reports/{reportId} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.driverId == request.auth.uid);
+      allow read: if isSignedIn()
+        && ((isAdmin() && sameCompanyResource()) || resource.data.driverId == request.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.driverId == request.auth.uid
+        && sameCompanyRequest()
         && request.resource.data.driverName is string
         && request.resource.data.message is string
         && request.resource.data.message.size() > 0;
-      allow update, delete: if isAdmin();
+      allow update, delete: if isAdmin() && sameCompanyResource();
     }
   }
 }

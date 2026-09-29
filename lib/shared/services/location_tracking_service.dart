@@ -345,6 +345,7 @@ class LocationTrackingService {
       await _firestore.collection(FirestorePaths.tracking).doc(user.id).set({
         'driverId': user.id,
         'driverName': user.name,
+        'companyId': user.companyId,
         'vehicleId': vehicle.id,
         'vehicleName': vehicle.name,
         'latitude': position.latitude,

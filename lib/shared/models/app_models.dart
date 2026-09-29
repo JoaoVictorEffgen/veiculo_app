@@ -1,3 +1,5 @@
+import '../tenant/tenant_ids.dart';
+
 enum UserRole { driver, admin }
 
 enum VehicleStatus { moving, stopped }
@@ -23,6 +25,7 @@ class AppUser {
     required this.email,
     required this.password,
     required this.role,
+    this.companyId = TenantIds.defaultCompany,
   });
 
   final String id;
@@ -30,6 +33,7 @@ class AppUser {
   final String email;
   final String password;
   final UserRole role;
+  final String companyId;
 
   bool get mustCompleteVehicleChecklist => role == UserRole.driver || role == UserRole.admin;
 
