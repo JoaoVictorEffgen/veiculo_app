@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/app_models.dart';
+import '../tenant/tenant_ids.dart';
 import '../models/auth_session.dart';
 import '../models/fleet_analytics.dart';
 import 'driver_track_filter.dart';
@@ -78,6 +79,10 @@ class AuthController extends StateNotifier<AuthSession> {
     final error = await _repository.login(email, password);
     state = AuthSession.ready(_repository.currentUser);
     if (error == null) {
+      final user = _repository.currentUser;
+      if (user?.role == UserRole.admin && user?.companyId == TenantIds.defaultCompany) {
+        await _repository.ensureDemoAuthAccounts();
+      }
       unawaited(_repository.ensureSeedData());
       unawaited(_repository.repairLegacyTenantDataForSession());
     }

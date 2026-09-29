@@ -104,4 +104,7 @@ abstract class VehicleRepository {
 
   /// Preenche `companyId` em documentos antigos (empresa principal) e cria contas demo.
   Future<void> repairLegacyTenantDataForSession();
+
+  /// Cria contas Auth + dados Firestore da empresa demo (sem afetar a principal).
+  Future<void> ensureDemoAuthAccounts();
 }

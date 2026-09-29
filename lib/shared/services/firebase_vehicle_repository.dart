@@ -177,8 +177,37 @@ class FirebaseVehicleRepository implements VehicleRepository {
       await _ensureUserProfileHasCompanyId(_cachedUser!);
       return null;
     } on FirebaseAuthException catch (error) {
+      if (_isDemoSeedEmail(normalizedEmail)) {
+        await ensureDemoAuthAccounts();
+        try {
+          final retry = await _auth.signInWithEmailAndPassword(
+            email: normalizedEmail,
+            password: password,
+          );
+          final uid = retry.user!.uid;
+          _cachedUser = await _loadAppUser(uid) ?? _appUserFromSeed(uid, normalizedEmail);
+          if (_cachedUser == null) return 'Usuario sem cadastro no sistema.';
+          await _ensureUserProfileHasCompanyId(_cachedUser!);
+          return null;
+        } on FirebaseAuthException catch (retryError) {
+          return _demoLoginErrorMessage(retryError);
+        }
+      }
       return _authErrorMessage(error);
     }
+  }
+
+  bool _isDemoSeedEmail(String email) {
+    final normalized = email.trim().toLowerCase();
+    return normalized.endsWith('@demo.com') ||
+        _seedUsers.any((seed) => seed.companyId == TenantIds.demoCompany && seed.email == normalized);
+  }
+
+  String _demoLoginErrorMessage(FirebaseAuthException error) {
+    if (error.code == 'wrong-password' || error.code == 'invalid-credential') {
+      return 'Conta demo existe com outra senha. Use "Esqueci minha senha" para admin@demo.com ou aguarde o reset pelo administrador.';
+    }
+    return _authErrorMessage(error);
   }
 
   @override
@@ -1363,7 +1392,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
       final signedInForFirestore = await _signInSeedAdminForFirestore(secondaryAuth);
       if (!signedInForFirestore) {
-        debugPrint('Seed Firebase: nao foi possivel autenticar admin de seed; pulando Firestore.');
+        debugPrint('Seed Firebase: admin principal indisponivel; tentando seed demo isolado.');
+        await _syncDemoCompanyFirestore(secondaryAuth, secondaryFirestore);
         return;
       }
 
@@ -1404,6 +1434,60 @@ class FirebaseVehicleRepository implements VehicleRepository {
     } finally {
       await secondaryApp.delete();
     }
+  }
+
+  @override
+  Future<void> ensureDemoAuthAccounts() async {
+    final secondaryApp = await _createSecondaryApp();
+    try {
+      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+      final secondaryFirestore = FirebaseFirestore.instanceFor(app: secondaryApp);
+
+      final demoSeeds = _seedUsers.where((seed) => seed.companyId == TenantIds.demoCompany);
+      for (final seed in demoSeeds) {
+        await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
+      }
+      await _syncDemoCompanyFirestore(secondaryAuth, secondaryFirestore);
+      debugPrint('ensureDemoAuthAccounts: concluido.');
+    } catch (error, stackTrace) {
+      debugPrint('ensureDemoAuthAccounts: $error\n$stackTrace');
+    } finally {
+      await secondaryApp.delete();
+    }
+  }
+
+  Future<void> _syncDemoCompanyFirestore(
+    FirebaseAuth secondaryAuth,
+    FirebaseFirestore secondaryFirestore,
+  ) async {
+    try {
+      await secondaryAuth.signInWithEmailAndPassword(
+        email: AppSeedData.demoAdminEmail,
+        password: AppSeedData.defaultPassword,
+      );
+    } on FirebaseAuthException catch (error) {
+      debugPrint('Seed demo Firestore: login admin demo falhou (${error.code}).');
+      return;
+    }
+
+    await secondaryFirestore.collection(FirestorePaths.companies).doc(TenantIds.demoCompany).set(
+      {'name': 'Empresa Demo (teste)', 'active': true},
+      SetOptions(merge: true),
+    );
+
+    final batch = secondaryFirestore.batch();
+    for (final seedVehicle in _seedVehicles.where((item) => item.companyId == TenantIds.demoCompany)) {
+      batch.set(
+        secondaryFirestore.collection(FirestorePaths.vehicles).doc(seedVehicle.id),
+        {
+          ..._vehicleToMap(seedVehicle.vehicle),
+          'companyId': seedVehicle.companyId,
+        },
+        SetOptions(merge: true),
+      );
+    }
+    await batch.commit();
+    debugPrint('Seed demo: empresa e veiculos sincronizados.');
   }
 
   Future<bool> _signInSeedAdminForFirestore(FirebaseAuth secondaryAuth) async {

@@ -61,6 +61,7 @@ Future<void> main() async {
 
 Future<void> _syncSeedInBackground(FirebaseVehicleRepository repository) async {
   try {
+    await repository.ensureDemoAuthAccounts().timeout(const Duration(seconds: 45));
     await repository.ensureSeedData().timeout(const Duration(seconds: 90));
     debugPrint('ensureSeedData: concluido.');
   } catch (error, stackTrace) {
