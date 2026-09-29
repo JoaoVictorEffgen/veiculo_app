@@ -189,7 +189,8 @@ service cloud.firestore {
     }
 
     match /companies/{companyId} {
-      allow read: if isSignedIn() && companyId == userCompanyId();
+      allow read: if isSignedIn()
+        && (companyId == userCompanyId() || resource.data.ownerId == request.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.name is string

@@ -19,10 +19,12 @@ Ao entrar, o app ainda mescla dados legados sem `companyId` e pode reparar o cam
 
 Campo `plan: trial` na empresa — integracao de pagamento fica para uma etapa futura.
 
-## Firebase
+## Firebase (obrigatorio)
 
-Apos atualizar regras:
+Sem isto, o login Auth funciona mas o perfil no Firestore nao e criado:
 
 ```bash
 firebase deploy --only firestore:rules --project device-streaming-53bb0fb6
 ```
+
+Se criou a conta antes do deploy: entre de novo com o mesmo e-mail/senha — o app tenta **recuperar** o perfil pela empresa (`ownerId`).

@@ -105,7 +105,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
     }
     if (_cachedUser?.id == firebaseUser.uid) return _cachedUser;
 
-    final loaded = await _loadAppUser(firebaseUser.uid);
+    final email = firebaseUser.email?.trim().toLowerCase() ?? '';
+    final loaded = await _loadAppUser(firebaseUser.uid) ?? await _recoverAdminProfile(firebaseUser.uid, email);
     if (loaded != null) {
       _cachedUser = loaded;
       return loaded;
@@ -153,9 +154,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
         password: password,
       );
       final uid = credential.user!.uid;
-      _cachedUser = await _loadAppUser(uid);
+      _cachedUser = await _loadAppUser(uid) ?? await _recoverAdminProfile(uid, normalizedEmail);
       if (_cachedUser == null) {
-        return 'Perfil nao encontrado. Use "Criar empresa" ou fale com o administrador.';
+        return 'Perfil incompleto no Firestore. Publique as regras (firebase deploy --only firestore:rules) '
+            'e tente de novo, ou apague este e-mail em Authentication e use "Criar empresa" novamente.';
       }
       await _ensureUserProfileHasCompanyId(_cachedUser!);
       return null;
@@ -187,21 +189,22 @@ class FirebaseVehicleRepository implements VehicleRepository {
       );
       final uid = credential.user!.uid;
 
-      final batch = _firestore.batch();
-      batch.set(_firestore.collection(FirestorePaths.companies).doc(companyId), {
+      final companyRef = _firestore.collection(FirestorePaths.companies).doc(companyId);
+      final userRef = _firestore.collection(FirestorePaths.users).doc(uid);
+
+      await companyRef.set({
         'name': trimmedCompany,
         'active': true,
         'ownerId': uid,
         'plan': 'trial',
         'createdAt': FieldValue.serverTimestamp(),
       });
-      batch.set(_firestore.collection(FirestorePaths.users).doc(uid), {
+      await userRef.set({
         'name': trimmedName,
         'email': normalizedEmail,
         'role': UserRole.admin.name,
         'companyId': companyId,
       });
-      await batch.commit();
 
       _cachedUser = AppUser(
         id: uid,
@@ -215,9 +218,50 @@ class FirebaseVehicleRepository implements VehicleRepository {
     } on FirebaseAuthException catch (error) {
       return _authErrorMessage(error);
     } on FirebaseException catch (error) {
-      await _auth.signOut();
-      _cachedUser = null;
-      return error.message ?? 'Nao foi possivel criar a empresa. Verifique as regras do Firestore.';
+      debugPrint('registerCompany Firestore: $error');
+      final recovered = await _recoverAdminProfile(_auth.currentUser!.uid, normalizedEmail);
+      if (recovered != null) {
+        _cachedUser = recovered;
+        return null;
+      }
+      return '${error.message ?? 'Erro ao salvar empresa.'} '
+          'Execute: firebase deploy --only firestore:rules --project device-streaming-53bb0fb6';
+    }
+  }
+
+  Future<AppUser?> _recoverAdminProfile(String uid, String normalizedEmail) async {
+    try {
+      final companies = await _firestore
+          .collection(FirestorePaths.companies)
+          .where('ownerId', isEqualTo: uid)
+          .limit(1)
+          .get();
+      if (companies.docs.isEmpty) return null;
+
+      final companyId = companies.docs.first.id;
+      final existingUser = await _firestore.collection(FirestorePaths.users).doc(uid).get();
+      if (existingUser.exists) {
+        return _userFromDoc(existingUser);
+      }
+
+      final fallbackName = normalizedEmail.split('@').first;
+      await _firestore.collection(FirestorePaths.users).doc(uid).set({
+        'name': fallbackName,
+        'email': normalizedEmail,
+        'role': UserRole.admin.name,
+        'companyId': companyId,
+      });
+      return AppUser(
+        id: uid,
+        name: fallbackName,
+        email: normalizedEmail,
+        password: '',
+        role: UserRole.admin,
+        companyId: companyId,
+      );
+    } catch (error) {
+      debugPrint('_recoverAdminProfile: $error');
+      return null;
     }
   }
 
