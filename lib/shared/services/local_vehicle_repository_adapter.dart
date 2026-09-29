@@ -308,11 +308,14 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   }
 
   @override
-  Future<void> ensureSeedData() async {}
-
-  @override
   Future<void> repairLegacyTenantDataForSession() async {}
 
   @override
-  Future<void> ensureDemoAuthAccounts() async {}
+  Future<String?> registerCompany({
+    required String companyName,
+    required String adminName,
+    required String email,
+    required String password,
+  }) async =>
+      null;
 }

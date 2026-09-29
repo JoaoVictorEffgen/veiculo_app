@@ -9,6 +9,7 @@ import '../features/admin/presentation/screens/fleet_dashboard_screen.dart';
 import '../features/admin/presentation/screens/admin_screen.dart';
 import '../features/admin/presentation/screens/tracking_screen.dart';
 import '../features/alerts/presentation/screens/alerts_screen.dart';
+import '../features/auth/presentation/screens/create_company_screen.dart';
 import '../features/auth/presentation/screens/login_screen.dart';
 import '../features/history/presentation/screens/history_screen.dart';
 import '../features/reports/presentation/screens/driver_reports_screen.dart';
@@ -22,6 +23,7 @@ class AppRoutes {
 
   static const splash = '/';
   static const login = '/login';
+  static const createCompany = '/criar-empresa';
   static const dashboard = '/dashboard';
   static const history = '/history';
   static const admin = '/admin';
@@ -60,11 +62,11 @@ String? resolveRedirect(GoRouterState state, AuthSession session) {
     return AppRoutes.dashboard;
   }
 
-  if (user == null && location != AppRoutes.login) {
+  if (user == null && location != AppRoutes.login && location != AppRoutes.createCompany) {
     return AppRoutes.login;
   }
 
-  if (user != null && location == AppRoutes.login) {
+  if (user != null && (location == AppRoutes.login || location == AppRoutes.createCompany)) {
     return AppRoutes.dashboard;
   }
 
@@ -106,6 +108,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.login,
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.createCompany,
+        builder: (context, state) => const CreateCompanyScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => MainAppShell(child: child),

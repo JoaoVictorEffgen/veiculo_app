@@ -100,11 +100,13 @@ abstract class VehicleRepository {
 
   Future<void> purgeOrphanedTracking(List<String> driverIds);
 
-  Future<void> ensureSeedData();
-
-  /// Preenche `companyId` em documentos antigos (empresa principal) e cria contas demo.
+  /// Preenche `companyId` em documentos antigos da empresa `default` (migracao).
   Future<void> repairLegacyTenantDataForSession();
 
-  /// Cria contas Auth + dados Firestore da empresa demo (sem afetar a principal).
-  Future<void> ensureDemoAuthAccounts();
+  Future<String?> registerCompany({
+    required String companyName,
+    required String adminName,
+    required String email,
+    required String password,
+  });
 }

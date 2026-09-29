@@ -22,7 +22,7 @@ EM MOVIMENTO / PARADO, local de parada, histórico de movimentações.
 2. [Firestore](https://console.firebase.google.com/project/device-streaming-53bb0fb6/firestore) → Criar banco → Regiao Sao Paulo
 3. Deploy das regras: `firebase deploy --only firestore:rules`
 
-Na abertura (online), o app sincroniza seed demo e `companyId` nos dados antigos (`ensureSeedData`). APK de referencia: `release-apk/baseline/`.
+Novas empresas: login → **Criar empresa (teste gratuito)**. Cada tenant tem `companyId` proprio; cadastre motoristas e veiculos em Administracao. Ver `docs/CRIAR_EMPRESA.md`.
 
 ## Como rodar
 

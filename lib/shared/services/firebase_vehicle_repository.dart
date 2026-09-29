@@ -12,7 +12,6 @@ import '../../firebase_options.dart';
 import '../firebase/firebase_auth_helpers.dart';
 import '../firebase/firestore_paths.dart';
 import '../models/app_models.dart';
-import '../seed/app_seed_data.dart';
 import '../tenant/tenant_ids.dart';
 import 'vehicle_maintenance_plan_codec.dart';
 import 'vehicle_repository.dart';
@@ -28,9 +27,6 @@ class FirebaseVehicleRepository implements VehicleRepository {
   final FirebaseFirestore _firestore;
 
   AppUser? _cachedUser;
-
-  static const _seedUsers = AppSeedData.users;
-  static const _seedVehicles = AppSeedData.seedVehicles;
 
   String get _sessionCompanyId => _cachedUser?.companyId ?? TenantIds.defaultCompany;
 
@@ -109,13 +105,6 @@ class FirebaseVehicleRepository implements VehicleRepository {
     }
     if (_cachedUser?.id == firebaseUser.uid) return _cachedUser;
 
-    final email = firebaseUser.email?.trim().toLowerCase() ?? '';
-    final seed = _appUserFromSeed(firebaseUser.uid, email);
-    if (seed != null) {
-      _cachedUser = seed;
-      return seed;
-    }
-
     final loaded = await _loadAppUser(firebaseUser.uid);
     if (loaded != null) {
       _cachedUser = loaded;
@@ -140,16 +129,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
         continue;
       }
 
-      final email = firebaseUser.email?.trim().toLowerCase() ?? '';
       if (_cachedUser?.id == firebaseUser.uid) {
         yield _cachedUser;
-        continue;
-      }
-
-      final seedUser = _appUserFromSeed(firebaseUser.uid, email);
-      if (seedUser != null) {
-        _cachedUser = seedUser;
-        yield seedUser;
         continue;
       }
 
@@ -172,42 +153,81 @@ class FirebaseVehicleRepository implements VehicleRepository {
         password: password,
       );
       final uid = credential.user!.uid;
-      _cachedUser = await _loadAppUser(uid) ?? _appUserFromSeed(uid, normalizedEmail);
-      if (_cachedUser == null) return 'Usuario sem cadastro no sistema.';
+      _cachedUser = await _loadAppUser(uid);
+      if (_cachedUser == null) {
+        return 'Perfil nao encontrado. Use "Criar empresa" ou fale com o administrador.';
+      }
       await _ensureUserProfileHasCompanyId(_cachedUser!);
       return null;
     } on FirebaseAuthException catch (error) {
-      if (_isDemoSeedEmail(normalizedEmail)) {
-        await ensureDemoAuthAccounts();
-        try {
-          final retry = await _auth.signInWithEmailAndPassword(
-            email: normalizedEmail,
-            password: password,
-          );
-          final uid = retry.user!.uid;
-          _cachedUser = await _loadAppUser(uid) ?? _appUserFromSeed(uid, normalizedEmail);
-          if (_cachedUser == null) return 'Usuario sem cadastro no sistema.';
-          await _ensureUserProfileHasCompanyId(_cachedUser!);
-          return null;
-        } on FirebaseAuthException catch (retryError) {
-          return _demoLoginErrorMessage(retryError);
-        }
-      }
       return _authErrorMessage(error);
     }
   }
 
-  bool _isDemoSeedEmail(String email) {
-    final normalized = email.trim().toLowerCase();
-    return normalized.endsWith('@demo.com') ||
-        _seedUsers.any((seed) => seed.companyId == TenantIds.demoCompany && seed.email == normalized);
+  @override
+  Future<String?> registerCompany({
+    required String companyName,
+    required String adminName,
+    required String email,
+    required String password,
+  }) async {
+    final trimmedCompany = companyName.trim();
+    final trimmedName = adminName.trim();
+    final normalizedEmail = email.trim().toLowerCase();
+    if (trimmedCompany.length < 2) return 'Informe o nome da empresa.';
+    if (trimmedName.length < 2) return 'Informe seu nome.';
+    if (password.length < 6) return 'Senha com minimo 6 caracteres.';
+
+    final companyId = _generateCompanyId(trimmedCompany);
+
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: normalizedEmail,
+        password: password,
+      );
+      final uid = credential.user!.uid;
+
+      final batch = _firestore.batch();
+      batch.set(_firestore.collection(FirestorePaths.companies).doc(companyId), {
+        'name': trimmedCompany,
+        'active': true,
+        'ownerId': uid,
+        'plan': 'trial',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      batch.set(_firestore.collection(FirestorePaths.users).doc(uid), {
+        'name': trimmedName,
+        'email': normalizedEmail,
+        'role': UserRole.admin.name,
+        'companyId': companyId,
+      });
+      await batch.commit();
+
+      _cachedUser = AppUser(
+        id: uid,
+        name: trimmedName,
+        email: normalizedEmail,
+        password: '',
+        role: UserRole.admin,
+        companyId: companyId,
+      );
+      return null;
+    } on FirebaseAuthException catch (error) {
+      return _authErrorMessage(error);
+    } on FirebaseException catch (error) {
+      await _auth.signOut();
+      _cachedUser = null;
+      return error.message ?? 'Nao foi possivel criar a empresa. Verifique as regras do Firestore.';
+    }
   }
 
-  String _demoLoginErrorMessage(FirebaseAuthException error) {
-    if (error.code == 'wrong-password' || error.code == 'invalid-credential') {
-      return 'Conta demo existe com outra senha. Use "Esqueci minha senha" para admin@demo.com ou aguarde o reset pelo administrador.';
-    }
-    return _authErrorMessage(error);
+  String _generateCompanyId(String companyName) {
+    final base = companyName
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    final slug = base.isEmpty ? 'empresa' : (base.length > 24 ? base.substring(0, 24) : base);
+    return 'co-$slug-${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
   }
 
   @override
@@ -1368,240 +1388,15 @@ class FirebaseVehicleRepository implements VehicleRepository {
     if (user == null || user.role != UserRole.admin) return;
     if (user.companyId != TenantIds.defaultCompany) return;
     try {
-      await _backfillMissingCompanyId(
-        _firestore,
-        secondaryAuth: _auth,
-        trackingUsesCurrentSession: true,
-      );
+      await _backfillMissingCompanyId(_firestore, trackingUsesCurrentSession: true);
       debugPrint('repairLegacyTenantData: concluido para empresa principal.');
     } catch (error, stackTrace) {
       debugPrint('repairLegacyTenantData: $error\n$stackTrace');
     }
   }
 
-  @override
-  Future<void> ensureSeedData() async {
-    final secondaryApp = await _createSecondaryApp();
-    try {
-      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
-      final secondaryFirestore = FirebaseFirestore.instanceFor(app: secondaryApp);
-
-      for (final seed in _seedUsers) {
-        await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
-      }
-
-      final signedInForFirestore = await _signInSeedAdminForFirestore(secondaryAuth);
-      if (!signedInForFirestore) {
-        debugPrint('Seed Firebase: admin principal indisponivel; tentando seed demo isolado.');
-        await _syncDemoCompanyFirestore(secondaryAuth, secondaryFirestore);
-        return;
-      }
-
-      for (final company in AppSeedData.companies) {
-        await secondaryFirestore.collection(FirestorePaths.companies).doc(company.id).set(
-          {'name': company.name, 'active': true},
-          SetOptions(merge: true),
-        );
-      }
-
-      final batch = secondaryFirestore.batch();
-      var upsertVehicles = 0;
-      for (final seedVehicle in _seedVehicles) {
-        final ref = secondaryFirestore.collection(FirestorePaths.vehicles).doc(seedVehicle.id);
-        batch.set(
-          ref,
-          {
-            ..._vehicleToMap(seedVehicle.vehicle),
-            'companyId': seedVehicle.companyId,
-          },
-          SetOptions(merge: true),
-        );
-        upsertVehicles++;
-      }
-      if (upsertVehicles > 0) {
-        await batch.commit();
-        debugPrint('Seed Firebase: $upsertVehicles veiculo(s) de teste sincronizado(s).');
-      }
-
-      await _backfillMissingCompanyId(
-        secondaryFirestore,
-        secondaryAuth: secondaryAuth,
-        trackingUsesCurrentSession: false,
-      );
-      debugPrint('Seed Firebase: concluido.');
-    } catch (error, stackTrace) {
-      debugPrint('Seed Firebase: $error\n$stackTrace');
-    } finally {
-      await secondaryApp.delete();
-    }
-  }
-
-  @override
-  Future<void> ensureDemoAuthAccounts() async {
-    final secondaryApp = await _createSecondaryApp();
-    try {
-      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
-      final secondaryFirestore = FirebaseFirestore.instanceFor(app: secondaryApp);
-
-      final demoSeeds = _seedUsers.where((seed) => seed.companyId == TenantIds.demoCompany);
-      for (final seed in demoSeeds) {
-        await _ensureAuthUserWithSecondary(secondaryAuth, secondaryFirestore, seed);
-      }
-      await _syncDemoCompanyFirestore(secondaryAuth, secondaryFirestore);
-      debugPrint('ensureDemoAuthAccounts: concluido.');
-    } catch (error, stackTrace) {
-      debugPrint('ensureDemoAuthAccounts: $error\n$stackTrace');
-    } finally {
-      await secondaryApp.delete();
-    }
-  }
-
-  Future<void> _syncDemoCompanyFirestore(
-    FirebaseAuth secondaryAuth,
-    FirebaseFirestore secondaryFirestore,
-  ) async {
-    try {
-      await secondaryAuth.signInWithEmailAndPassword(
-        email: AppSeedData.demoAdminEmail,
-        password: AppSeedData.defaultPassword,
-      );
-    } on FirebaseAuthException catch (error) {
-      debugPrint('Seed demo Firestore: login admin demo falhou (${error.code}).');
-      return;
-    }
-
-    await secondaryFirestore.collection(FirestorePaths.companies).doc(TenantIds.demoCompany).set(
-      {'name': 'Empresa Demo (teste)', 'active': true},
-      SetOptions(merge: true),
-    );
-
-    final batch = secondaryFirestore.batch();
-    for (final seedVehicle in _seedVehicles.where((item) => item.companyId == TenantIds.demoCompany)) {
-      batch.set(
-        secondaryFirestore.collection(FirestorePaths.vehicles).doc(seedVehicle.id),
-        {
-          ..._vehicleToMap(seedVehicle.vehicle),
-          'companyId': seedVehicle.companyId,
-        },
-        SetOptions(merge: true),
-      );
-    }
-    await batch.commit();
-    debugPrint('Seed demo: empresa e veiculos sincronizados.');
-  }
-
-  Future<bool> _signInSeedAdminForFirestore(FirebaseAuth secondaryAuth) async {
-    final adminEmails = _seedUsers
-        .where((item) => item.role == UserRole.admin)
-        .map((item) => item.email)
-        .toList();
-    for (final email in adminEmails) {
-      try {
-        await secondaryAuth.signInWithEmailAndPassword(
-          email: email,
-          password: AppSeedData.defaultPassword,
-        );
-        return true;
-      } on FirebaseAuthException catch (error) {
-        debugPrint('Seed Firebase: login $email falhou (${error.code}).');
-      }
-    }
-    return false;
-  }
-
-  Future<void> _ensureAuthUserWithSecondary(
-    FirebaseAuth secondaryAuth,
-    FirebaseFirestore secondaryFirestore,
-    SeedUser seed,
-  ) async {
-    String uid;
-    try {
-      final credential = await secondaryAuth.createUserWithEmailAndPassword(
-        email: seed.email,
-        password: seed.password,
-      );
-      uid = credential.user!.uid;
-      await secondaryFirestore.collection(FirestorePaths.users).doc(uid).set({
-        'name': seed.name,
-        'email': seed.email,
-        'role': seed.role.name,
-        'companyId': seed.companyId,
-      });
-      return;
-    } on FirebaseAuthException catch (error) {
-      if (error.code != 'email-already-in-use') rethrow;
-      try {
-        final credential = await secondaryAuth.signInWithEmailAndPassword(
-          email: seed.email,
-          password: seed.password,
-        );
-        uid = credential.user!.uid;
-      } on FirebaseAuthException catch (signInError) {
-        if (signInError.code == 'wrong-password' || signInError.code == 'invalid-credential') {
-          debugPrint('Seed Firebase: ${seed.email} ja existe com outra senha; atualizando perfil no Firestore.');
-          await _mergeSeedUserProfileByEmail(secondaryFirestore, seed);
-          return;
-        }
-        rethrow;
-      }
-    }
-
-    final ref = secondaryFirestore.collection(FirestorePaths.users).doc(uid);
-    final existing = await ref.get();
-    if (existing.exists) {
-      await ref.set({
-        'name': seed.name,
-        'email': seed.email,
-        'role': seed.role.name,
-        'companyId': seed.companyId,
-      }, SetOptions(merge: true));
-      return;
-    }
-
-    if (seed.role == UserRole.admin) {
-      await secondaryAuth.signInWithEmailAndPassword(email: seed.email, password: seed.password);
-      await ref.set({
-        'name': seed.name,
-        'email': seed.email,
-        'role': seed.role.name,
-        'companyId': seed.companyId,
-      });
-      return;
-    }
-
-    final companyAdmin = _seedUsers.firstWhere(
-      (item) => item.role == UserRole.admin && item.companyId == seed.companyId,
-    );
-    await secondaryAuth.signInWithEmailAndPassword(email: companyAdmin.email, password: companyAdmin.password);
-    await ref.set({
-      'name': seed.name,
-      'email': seed.email,
-      'role': seed.role.name,
-      'companyId': seed.companyId,
-    });
-  }
-
-  Future<void> _mergeSeedUserProfileByEmail(FirebaseFirestore firestore, SeedUser seed) async {
-    final matches = await firestore
-        .collection(FirestorePaths.users)
-        .where('email', isEqualTo: seed.email)
-        .limit(1)
-        .get();
-    if (matches.docs.isEmpty) {
-      debugPrint('Seed Firebase: perfil Firestore ausente para ${seed.email}.');
-      return;
-    }
-    await matches.docs.first.reference.set({
-      'name': seed.name,
-      'email': seed.email,
-      'role': seed.role.name,
-      'companyId': seed.companyId,
-    }, SetOptions(merge: true));
-  }
-
   Future<void> _backfillMissingCompanyId(
     FirebaseFirestore firestore, {
-    required FirebaseAuth secondaryAuth,
     required bool trackingUsesCurrentSession,
   }) async {
     const collections = [
@@ -1625,33 +1420,6 @@ class FirebaseVehicleRepository implements VehicleRepository {
         FirestorePaths.tracking,
         companyIdForDoc: (doc) => _companyIdForTrackingDoc(firestore, doc),
         onlyCompanyId: tenantId,
-      );
-    } else {
-      await _backfillTrackingPerAdmin(firestore, secondaryAuth: secondaryAuth);
-    }
-  }
-
-  Future<void> _backfillTrackingPerAdmin(
-    FirebaseFirestore firestore, {
-    required FirebaseAuth? secondaryAuth,
-  }) async {
-    final adminSeeds = _seedUsers.where((item) => item.role == UserRole.admin).toList();
-    for (final adminSeed in adminSeeds) {
-      if (secondaryAuth != null) {
-        try {
-          await secondaryAuth.signInWithEmailAndPassword(
-            email: adminSeed.email,
-            password: AppSeedData.defaultPassword,
-          );
-        } on FirebaseAuthException {
-          continue;
-        }
-      }
-      await _backfillCompanyIdOnCollection(
-        firestore,
-        FirestorePaths.tracking,
-        companyIdForDoc: (doc) => _companyIdForTrackingDoc(firestore, doc),
-        onlyCompanyId: adminSeed.companyId,
       );
     }
   }
@@ -1692,7 +1460,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         if (doc.data().containsKey('companyId')) continue;
         final companyId = companyIdForDoc != null
             ? await companyIdForDoc(doc)
-            : _companyIdFromSeedEmail(doc.data()['email'] as String?) ?? TenantIds.defaultCompany;
+            : TenantIds.defaultCompany;
         if (onlyCompanyId != null && companyId != onlyCompanyId) continue;
         batch.update(doc.reference, {'companyId': companyId});
         batchCount++;
@@ -1718,13 +1486,6 @@ class FirebaseVehicleRepository implements VehicleRepository {
     }
   }
 
-  String? _companyIdFromSeedEmail(String? email) {
-    if (email == null || email.isEmpty) return null;
-    final normalized = email.trim().toLowerCase();
-    final seed = _seedUsers.where((item) => item.email == normalized).firstOrNull;
-    return seed?.companyId;
-  }
-
   Future<UserCredential> _createAuthUserWithoutSwitchingSession({required String email, required String password}) async {
     final secondaryApp = await _createSecondaryApp();
     try {
@@ -1741,19 +1502,6 @@ class FirebaseVehicleRepository implements VehicleRepository {
     return Firebase.initializeApp(
       name: 'SecondaryAuth_${DateTime.now().microsecondsSinceEpoch}',
       options: DefaultFirebaseOptions.currentPlatform,
-    );
-  }
-
-  AppUser? _appUserFromSeed(String uid, String normalizedEmail) {
-    final seed = _seedUsers.where((item) => item.email.trim().toLowerCase() == normalizedEmail).firstOrNull;
-    if (seed == null) return null;
-    return AppUser(
-      id: uid,
-      name: seed.name,
-      email: normalizedEmail,
-      password: '',
-      role: seed.role,
-      companyId: seed.companyId,
     );
   }
 
@@ -1987,6 +1735,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
         return 'E-mail ou senha invalidos.';
       case 'email-already-in-use':
         return 'Ja existe um usuario com esse e-mail.';
+      case 'too-many-requests':
+        return 'Muitas tentativas. Aguarde 15–30 minutos ou teste outro dispositivo/rede.';
       default:
         return error.message ?? 'Erro de autenticacao.';
     }

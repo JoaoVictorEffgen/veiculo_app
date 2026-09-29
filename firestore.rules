@@ -178,24 +178,32 @@ service cloud.firestore {
         || (isSignedIn() && checklistId.matches('^' + request.auth.uid + '_.*'));
     }
 
-    function isBootstrapCompanyId(id) {
-      return id == 'default' || id == 'empresa-demo';
+    function isRegisteringCompanyAdmin(userId) {
+      return isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == 'admin'
+        && request.resource.data.companyId is string
+        && request.resource.data.email is string
+        && request.resource.data.name is string
+        && get(/databases/$(database)/documents/companies/$(request.resource.data.companyId)).data.ownerId == request.auth.uid;
     }
 
     match /companies/{companyId} {
       allow read: if isSignedIn() && companyId == userCompanyId();
-      allow create, update: if isAdmin()
-        && isBootstrapCompanyId(companyId)
-        && request.resource.data.keys().hasOnly(['name', 'active'])
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
         && request.resource.data.active == true;
+      allow update: if isAdmin() && companyId == userCompanyId();
       allow delete: if false;
     }
 
     match /users/{userId} {
       allow read: if isSignedIn()
         && (request.auth.uid == userId || (isAdmin() && sameCompanyResource()));
-      allow create: if isAdmin() && sameCompanyRequest()
-        || (isSignedIn() && request.auth.uid == userId && sameCompanyRequest());
+      allow create: if (isAdmin() && sameCompanyRequest())
+        || isRegisteringCompanyAdmin(userId);
       allow update: if (isAdmin() && sameCompanyResource() && sameCompanyRequest())
         || isOwnFcmTokenUpdate(userId);
       allow delete: if isAdmin() && sameCompanyResource();

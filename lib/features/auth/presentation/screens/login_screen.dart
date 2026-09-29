@@ -243,6 +243,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 : const Icon(Icons.login),
                             label: Text(_loading ? 'Entrando...' : 'Entrar'),
                           ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: _loading ? null : () => context.go(AppRoutes.createCompany),
+                            icon: const Icon(Icons.business_outlined),
+                            label: const Text('Criar empresa (teste gratuito)'),
+                          ),
                         ],
                       ),
                     ),
