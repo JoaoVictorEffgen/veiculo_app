@@ -72,7 +72,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _openForgotPasswordDialog() async {
-    final resetEmailController = TextEditingController(text: _emailController.text.trim());
+    final resetEmailController = TextEditingController();
     final sent = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -82,16 +82,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Informe o e-mail cadastrado. Enviaremos um link para redefinir sua senha.',
+              'Informe o e-mail de login da conta (pode ser diferente do campo acima). '
+              'Enviaremos o link de redefinicao para esse endereco.',
               style: TextStyle(color: AppColors.textSecondary, height: 1.4),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: resetEmailController,
               keyboardType: TextInputType.emailAddress,
+              autofillHints: const [],
               autofocus: true,
               decoration: const InputDecoration(
-                labelText: 'E-mail',
+                labelText: 'E-mail da conta',
+                hintText: 'Ex.: seu@gmail.com',
                 prefixIcon: Icon(Icons.mail_outline),
               ),
             ),
@@ -115,7 +118,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
     );
 
-    final email = resetEmailController.text.trim();
+    final email = resetEmailController.text.trim().toLowerCase();
     resetEmailController.dispose();
     if (sent != true || !mounted) return;
 
@@ -132,7 +135,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Enviamos um link de recuperacao para $email. Verifique a caixa de entrada e o spam (remetente Firebase).',
+          'Se $email estiver cadastrado, voce recebera um link de recuperacao em alguns minutos. '
+          'Verifique spam/lixo eletronico e o remetente noreply@firebaseapp.com. '
+          'Se nada chegar, peca ao administrador para confirmar o e-mail exato do seu cadastro.',
         ),
       ),
     );

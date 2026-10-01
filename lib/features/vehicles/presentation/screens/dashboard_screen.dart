@@ -374,7 +374,6 @@ class _VehicleCard extends StatelessWidget {
       return;
     }
 
-    unawaited(ref.read(tripStartVoiceServiceProvider).announceTripStart(operator.name));
   }
 
   Future<void> _stop(BuildContext context) async {

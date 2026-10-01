@@ -11,6 +11,7 @@ abstract class VehicleRepository {
 
   Future<String?> login(String email, String password);
   Future<String?> sendPasswordResetEmail(String email);
+  Future<String?> requestLoginEmailChange(String newEmail);
   Future<void> logout();
 
   Stream<List<Vehicle>> watchVehicles();

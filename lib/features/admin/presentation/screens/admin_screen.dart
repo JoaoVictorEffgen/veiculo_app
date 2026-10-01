@@ -389,7 +389,19 @@ class AdminScreen extends ConsumerWidget {
           email: values[1],
           password: values[2].isEmpty ? null : values[2],
         );
-    if (error != null && context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+    if (error != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    if (context.mounted && values[1].trim().toLowerCase() != driver.email.trim().toLowerCase()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'E-mail de login atualizado. O motorista deve entrar e recuperar senha usando o novo e-mail.',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _deleteDriver(BuildContext context, WidgetRef ref, AppUser admin, AppUser driver) async {

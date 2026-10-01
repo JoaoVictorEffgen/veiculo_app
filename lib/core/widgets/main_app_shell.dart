@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/router.dart';
 import '../../app/theme.dart';
+import '../../features/auth/presentation/widgets/change_login_email_dialog.dart';
 import '../../shared/models/app_models.dart';
 import '../../shared/services/app_providers.dart';
 
@@ -345,13 +346,35 @@ class CorporateAppBar extends ConsumerWidget implements PreferredSizeWidget {
                 icon: const Icon(Icons.history),
                 tooltip: 'Historico',
               ),
-              IconButton(
-                onPressed: () async {
-                  await ref.read(authControllerProvider.notifier).logout();
-                  if (context.mounted) context.go(AppRoutes.login);
+              PopupMenuButton<String>(
+                tooltip: 'Conta',
+                onSelected: (value) async {
+                  switch (value) {
+                    case 'email':
+                      await showChangeLoginEmailDialog(context, ref);
+                    case 'logout':
+                      await ref.read(authControllerProvider.notifier).logout();
+                      if (context.mounted) context.go(AppRoutes.login);
+                  }
                 },
-                icon: const Icon(Icons.logout),
-                tooltip: 'Sair',
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: 'email',
+                    child: ListTile(
+                      leading: Icon(Icons.mail_outline),
+                      title: Text('Alterar e-mail de login'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'logout',
+                    child: ListTile(
+                      leading: Icon(Icons.logout),
+                      title: Text('Sair'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ],
               ),
             ]),
       ],

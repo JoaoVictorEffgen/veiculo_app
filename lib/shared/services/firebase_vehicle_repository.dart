@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
@@ -89,6 +90,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
           .timeout(const Duration(seconds: 10));
       if (!remote.exists) return _cachedUser;
       _cachedUser = _userFromDoc(remote);
+      await _syncAuthEmailToProfile(_cachedUser!);
       return _cachedUser;
     } catch (error) {
       debugPrint('refreshCurrentUser: $error');
@@ -159,6 +161,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
         return 'Nao foi possivel vincular sua conta aos dados da empresa. '
             'Apague este e-mail em Firebase Authentication e use "Criar empresa" de novo.';
       }
+      await _syncAuthEmailToProfile(_cachedUser!);
       await _ensureUserProfileHasCompanyId(_cachedUser!);
       return null;
     } on FirebaseAuthException catch (error) {
@@ -307,6 +310,84 @@ class FirebaseVehicleRepository implements VehicleRepository {
       return null;
     } on FirebaseAuthException catch (error) {
       return passwordResetErrorMessage(error);
+    }
+  }
+
+  @override
+  Future<String?> requestLoginEmailChange(String newEmail) async {
+    final normalized = newEmail.trim().toLowerCase();
+    if (normalized.isEmpty || !normalized.contains('@')) {
+      return 'Informe um e-mail valido.';
+    }
+
+    final firebaseUser = _auth.currentUser;
+    if (firebaseUser == null) return 'Sessao expirada. Faca login novamente.';
+
+    if (firebaseUser.email?.trim().toLowerCase() == normalized) {
+      return 'Este ja e o seu e-mail de login.';
+    }
+
+    try {
+      await firebaseUser.verifyBeforeUpdateEmail(normalized);
+      return null;
+    } on FirebaseAuthException catch (error) {
+      switch (error.code) {
+        case 'email-already-in-use':
+          return 'Este e-mail ja esta em uso por outra conta.';
+        case 'invalid-email':
+          return 'Informe um e-mail valido.';
+        case 'requires-recent-login':
+          return 'Por seguranca, saia e entre de novo antes de alterar o e-mail.';
+        default:
+          return error.message ?? 'Nao foi possivel enviar a confirmacao.';
+      }
+    }
+  }
+
+  Future<void> _syncAuthEmailToProfile(AppUser user) async {
+    final authEmail = _auth.currentUser?.email?.trim().toLowerCase();
+    if (authEmail == null || authEmail.isEmpty) return;
+    if (user.email.trim().toLowerCase() == authEmail) return;
+
+    try {
+      await _firestore.collection(FirestorePaths.users).doc(user.id).update({'email': authEmail});
+      _cachedUser = AppUser(
+        id: user.id,
+        name: user.name,
+        email: authEmail,
+        password: user.password,
+        role: user.role,
+        companyId: user.companyId,
+      );
+    } catch (error) {
+      debugPrint('syncAuthEmailToProfile: $error');
+    }
+  }
+
+  Future<String?> _adminSyncUserAuth({
+    required AppUser actor,
+    required String targetUserId,
+    String? newEmail,
+    String? newPassword,
+  }) async {
+    if (actor.role != UserRole.admin) return 'Somente administradores.';
+
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable('adminSyncUserAuth');
+      await callable.call<Map<String, dynamic>>({
+        'targetUserId': targetUserId,
+        if (newEmail != null && newEmail.isNotEmpty) 'newEmail': newEmail,
+        if (newPassword != null && newPassword.isNotEmpty) 'newPassword': newPassword,
+      });
+      return null;
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code == 'not-found') {
+        return 'Funcao do servidor nao publicada. Execute firebase deploy --only functions.';
+      }
+      return error.message ?? 'Nao foi possivel atualizar login do motorista.';
+    } catch (error) {
+      debugPrint('adminSyncUserAuth: $error');
+      return 'Nao foi possivel atualizar login do motorista.';
     }
   }
 
@@ -1332,6 +1413,21 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final trimmedName = name.trim();
     final normalizedEmail = email.trim().toLowerCase();
     try {
+      final existing = await _firestore.collection(FirestorePaths.users).doc(driverId).get();
+      final previousEmail = (existing.data()?['email'] as String?)?.trim().toLowerCase() ?? '';
+      final emailChanged = normalizedEmail != previousEmail;
+      final passwordProvided = password != null && password.isNotEmpty;
+
+      if (emailChanged || passwordProvided) {
+        final authError = await _adminSyncUserAuth(
+          actor: actor,
+          targetUserId: driverId,
+          newEmail: emailChanged ? normalizedEmail : null,
+          newPassword: passwordProvided ? password : null,
+        );
+        if (authError != null) return authError;
+      }
+
       await _firestore.collection(FirestorePaths.users).doc(driverId).update({
         'name': trimmedName,
         'email': normalizedEmail,

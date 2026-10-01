@@ -172,10 +172,9 @@ service cloud.firestore {
         && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate;
     }
 
-    function canReadChecklist(checklistId) {
+    function canReadChecklist() {
       return (isAdmin() && sameCompanyResource())
-        || (isSignedIn() && resource.data.driverId == request.auth.uid && sameCompanyResource())
-        || (isSignedIn() && checklistId.matches('^' + request.auth.uid + '_.*'));
+        || (isSignedIn() && resource.data.driverId == request.auth.uid);
     }
 
     function isRegisteringCompanyAdmin(userId) {
@@ -258,7 +257,7 @@ service cloud.firestore {
     }
 
     match /vehicle_checklists/{checklistId} {
-      allow read: if canReadChecklist(checklistId);
+      allow read: if canReadChecklist();
       allow create: if isDriverChecklistCreate(checklistId);
       allow update: if isAdmin() || isDriverChecklistUpdate(checklistId);
       allow delete: if isAdmin();

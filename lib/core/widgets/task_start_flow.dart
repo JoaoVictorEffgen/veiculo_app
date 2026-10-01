@@ -116,7 +116,6 @@ Future<bool> runTaskStartFlow({
       }
       return true;
     }
-    unawaited(ref.read(tripStartVoiceServiceProvider).announceTripStart(driver.name));
   }
 
   if (plannedRoute != null && context.mounted) {

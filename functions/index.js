@@ -161,6 +161,55 @@ exports.onDriverReportUpdated = functions.firestore
     });
   });
 
+exports.adminSyncUserAuth = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Faca login como administrador.');
+  }
+
+  const targetUserId = String(data.targetUserId || '').trim();
+  const newEmailRaw = data.newEmail;
+  const newPasswordRaw = data.newPassword;
+
+  if (!targetUserId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Motorista invalido.');
+  }
+
+  const db = admin.firestore();
+  const callerDoc = await db.collection('users').doc(context.auth.uid).get();
+  if (!callerDoc.exists || callerDoc.data().role !== 'admin') {
+    throw new functions.https.HttpsError('permission-denied', 'Somente administradores.');
+  }
+
+  const callerCompanyId = callerDoc.data().companyId || 'default';
+  const targetDoc = await db.collection('users').doc(targetUserId).get();
+  if (!targetDoc.exists) {
+    throw new functions.https.HttpsError('not-found', 'Usuario nao encontrado.');
+  }
+
+  const targetCompanyId = targetDoc.data().companyId || 'default';
+  if (targetCompanyId !== callerCompanyId) {
+    throw new functions.https.HttpsError('permission-denied', 'Motorista de outra empresa.');
+  }
+
+  const authUpdates = {};
+  if (typeof newEmailRaw === 'string' && newEmailRaw.trim()) {
+    authUpdates.email = newEmailRaw.trim().toLowerCase();
+  }
+  if (typeof newPasswordRaw === 'string' && newPasswordRaw.length > 0) {
+    if (newPasswordRaw.length < 6) {
+      throw new functions.https.HttpsError('invalid-argument', 'Senha com minimo 6 caracteres.');
+    }
+    authUpdates.password = newPasswordRaw;
+  }
+
+  if (Object.keys(authUpdates).length === 0) {
+    return { updated: false };
+  }
+
+  await admin.auth().updateUser(targetUserId, authUpdates);
+  return { updated: true };
+});
+
 exports.purgeExpiredAnnouncements = functions.pubsub
   .schedule('every 15 minutes')
   .onRun(async () => {

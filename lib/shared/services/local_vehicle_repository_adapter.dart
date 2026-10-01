@@ -59,6 +59,11 @@ class LocalVehicleRepositoryAdapter implements VehicleRepository {
   }
 
   @override
+  Future<String?> requestLoginEmailChange(String newEmail) async {
+    return 'Alteracao de e-mail disponivel apenas com Firebase.';
+  }
+
+  @override
   Future<void> logout() async {
     await _local.clearSession();
     _authController.add(null);
