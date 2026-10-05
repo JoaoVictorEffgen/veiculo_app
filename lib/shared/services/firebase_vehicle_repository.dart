@@ -83,11 +83,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       return (error: 'Veiculo nao encontrado.', companyId: null);
     }
 
-    var companyId = _companyIdFromData(userSnap.data());
-    if (!userSnap.data()!.containsKey('companyId')) {
-      await userSnap.reference.set({'companyId': companyId}, SetOptions(merge: true));
-    }
-
+    final companyId = _companyIdFromData(userSnap.data());
     final vehicleData = vehicleSnap.data()!;
     final vehicleCompanyId = _companyIdFromData(vehicleData);
     if (vehicleCompanyId != companyId && vehicleData.containsKey('companyId')) {
@@ -867,7 +863,8 @@ class FirebaseVehicleRepository implements VehicleRepository {
   Future<VehicleChecklist?> getTodayChecklist(AppUser driver, String vehicleId) async {
     if (!driver.mustCompleteVehicleChecklist) return null;
 
-    final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicleId);
+    final today = DateTime.now();
+    final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicleId, date: today);
     final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
 
     try {
@@ -934,7 +931,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
     try {
       final existing = await docRef.get();
       if (existing.exists) {
-        return 'Checklist deste veiculo ja foi feito hoje.';
+        return null;
       }
 
       await docRef.set({

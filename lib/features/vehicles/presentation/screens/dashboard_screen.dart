@@ -296,7 +296,7 @@ class _VehicleCard extends StatelessWidget {
   }
 
   Future<void> _confirmStartWithChecklist(BuildContext context, AppUser operator) async {
-    var todayChecklist = todayChecklistForVehicle(ref, vehicle.id);
+    var todayChecklist = await fetchTodayChecklistForVehicle(ref, operator, vehicle.id);
 
     if (todayChecklist == null) {
       final completed = await VehicleChecklistSheet.show(
@@ -306,6 +306,7 @@ class _VehicleCard extends StatelessWidget {
       );
       if (completed == null || !context.mounted) return;
       todayChecklist = completed;
+      ref.invalidate(driverTodayChecklistsProvider);
     } else {
       final action = await showDialog<String>(
         context: context,

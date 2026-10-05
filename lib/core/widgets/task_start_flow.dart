@@ -162,7 +162,7 @@ Future<bool> _ensureChecklistForVehicle(
 ) async {
   if (!driver.mustCompleteVehicleChecklist) return true;
 
-  var todayChecklist = todayChecklistForVehicle(ref, vehicle.id);
+  var todayChecklist = await fetchTodayChecklistForVehicle(ref, driver, vehicle.id);
 
   if (todayChecklist == null) {
     final completed = await VehicleChecklistSheet.show(
@@ -170,6 +170,9 @@ Future<bool> _ensureChecklistForVehicle(
       driver: driver,
       vehicle: vehicle,
     );
+    if (completed != null) {
+      ref.invalidate(driverTodayChecklistsProvider);
+    }
     return completed != null;
   }
 

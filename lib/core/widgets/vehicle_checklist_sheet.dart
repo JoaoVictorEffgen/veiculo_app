@@ -95,23 +95,33 @@ class _VehicleChecklistSheetState extends ConsumerState<VehicleChecklistSheet> {
       return;
     }
 
-    final saved = VehicleChecklist(
-      id: vehicleChecklistDocId(driverId: widget.driver.id, vehicleId: widget.vehicle.id),
-      driverId: widget.driver.id,
-      driverName: widget.driver.name,
-      vehicleId: widget.vehicle.id,
-      vehicleName: widget.vehicle.name,
-      vehiclePlate: widget.vehicle.plate,
-      vehicleModel: widget.vehicle.model,
-      checklistDate: checklistDateKey(),
-      items: Map<String, bool>.from(_items),
-      completedAt: DateTime.now(),
-      notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-      signatureBase64: signatureBase64,
-    );
+    ref.invalidate(driverTodayChecklistsProvider);
+    final today = DateTime.now();
+    final saved = await ref.read(repositoryProvider).getTodayChecklist(widget.driver, widget.vehicle.id) ??
+        VehicleChecklist(
+          id: vehicleChecklistDocId(
+            driverId: widget.driver.id,
+            vehicleId: widget.vehicle.id,
+            date: today,
+          ),
+          driverId: widget.driver.id,
+          driverName: widget.driver.name,
+          vehicleId: widget.vehicle.id,
+          vehicleName: widget.vehicle.name,
+          vehiclePlate: widget.vehicle.plate,
+          vehicleModel: widget.vehicle.model,
+          checklistDate: checklistDateKey(today),
+          items: Map<String, bool>.from(_items),
+          completedAt: DateTime.now(),
+          notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+          signatureBase64: signatureBase64,
+        );
 
-    await _showPdfActions(saved);
-    if (mounted) Navigator.pop(context, saved);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Checklist salvo. Continue para iniciar a corrida.')),
+    );
+    Navigator.pop(context, saved);
   }
 
   Future<void> _showPdfActions(VehicleChecklist checklist) async {

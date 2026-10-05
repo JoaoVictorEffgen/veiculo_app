@@ -383,6 +383,17 @@ VehicleChecklist? todayChecklistForVehicle(WidgetRef ref, String vehicleId) {
   return null;
 }
 
+/// Leitura direta do documento do dia (nao depende só do stream em tempo real).
+Future<VehicleChecklist?> fetchTodayChecklistForVehicle(
+  WidgetRef ref,
+  AppUser user,
+  String vehicleId,
+) async {
+  final cached = todayChecklistForVehicle(ref, vehicleId);
+  if (cached != null) return cached;
+  return ref.read(repositoryProvider).getTodayChecklist(user, vehicleId);
+}
+
 final alertsPeriodProvider = StateProvider<FleetPeriodSelection>(
   (ref) => const FleetPeriodSelection(preset: FleetPeriodPreset.last30Days),
 );
