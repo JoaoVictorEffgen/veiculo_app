@@ -155,6 +155,17 @@ service cloud.firestore {
         && announcementIsActive(resource.data);
     }
 
+    function checklistWriteTenantOk() {
+      let vehicleId = request.resource.data.vehicleId;
+      let vehicleCo = get(/databases/$(database)/documents/vehicles/$(vehicleId)).data.get('companyId', 'default');
+      let requestCo = request.resource.data.get('companyId', 'default');
+      return requestCo == vehicleCo
+        && (
+          !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          || requestCo == userCompanyId()
+        );
+    }
+
     function isDriverChecklistCreate(checklistId) {
       return isSignedIn()
         && request.resource.data.driverId == request.auth.uid
@@ -162,10 +173,7 @@ service cloud.firestore {
         && request.resource.data.checklistDate is string
         && request.resource.data.vehicleId is string
         && request.resource.data.items is map
-        && (
-          !exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          || request.resource.data.get('companyId', 'default') == userCompanyId()
-        );
+        && checklistWriteTenantOk();
     }
 
     function isDriverChecklistUpdate(checklistId) {

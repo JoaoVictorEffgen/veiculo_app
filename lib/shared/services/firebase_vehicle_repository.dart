@@ -60,12 +60,32 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   Future<String?> _ensureVehicleInUserCompany(AppUser user, String vehicleId) async {
-    final doc = await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).get();
-    if (!doc.exists) return 'Veiculo nao encontrado.';
-    if (_companyIdFromData(doc.data()) != user.companyId) {
-      return 'Este veiculo nao pertence a sua empresa.';
+    final resolved = await _resolveChecklistCompanyId(user.id, vehicleId);
+    return resolved.error;
+  }
+
+  /// [companyId] alinhado ao Firestore (users + veiculo) para passar nas regras de checklist.
+  Future<({String? error, String? companyId})> _resolveChecklistCompanyId(
+    String userId,
+    String vehicleId,
+  ) async {
+    final userSnap = await _firestore.collection(FirestorePaths.users).doc(userId).get();
+    if (!userSnap.exists) {
+      return (error: 'Perfil nao encontrado. Saia e entre de novo.', companyId: null);
     }
-    return null;
+    final userCompanyId = _companyIdFromData(userSnap.data());
+
+    final vehicleSnap = await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).get();
+    if (!vehicleSnap.exists) {
+      return (error: 'Veiculo nao encontrado.', companyId: null);
+    }
+    final vehicleCompanyId = _companyIdFromData(vehicleSnap.data());
+
+    if (userCompanyId != vehicleCompanyId) {
+      return (error: 'Este veiculo nao pertence a sua empresa.', companyId: null);
+    }
+
+    return (error: null, companyId: userCompanyId);
   }
 
   @override
@@ -887,8 +907,9 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
     if (signatureBase64.trim().isEmpty) return 'Assine o checklist antes de concluir.';
 
-    final vehicleCompanyError = await _ensureVehicleInUserCompany(driver, vehicle.id);
-    if (vehicleCompanyError != null) return vehicleCompanyError;
+    final tenant = await _resolveChecklistCompanyId(driver.id, vehicle.id);
+    if (tenant.error != null) return tenant.error;
+    final writeCompanyId = tenant.companyId!;
 
     final today = DateTime.now();
     final checklistDate = checklistDateKey(today);
@@ -909,7 +930,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       await docRef.set({
         'driverId': driver.id,
         'driverName': driver.name,
-        'companyId': driver.companyId,
+        'companyId': writeCompanyId,
         'vehicleId': vehicle.id,
         'vehicleName': vehicle.name,
         'vehiclePlate': vehicle.plate,
