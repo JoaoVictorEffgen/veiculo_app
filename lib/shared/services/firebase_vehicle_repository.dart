@@ -82,6 +82,12 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final vehicleCompanyId = _companyIdFromData(vehicleSnap.data());
 
     if (userCompanyId != vehicleCompanyId) {
+      final vehicleData = vehicleSnap.data();
+      final vehicleMissingTenant = vehicleData == null || !vehicleData.containsKey('companyId');
+      final isAdmin = userSnap.data()?['role'] == UserRole.admin.name;
+      if (vehicleMissingTenant && isAdmin) {
+        return (error: null, companyId: userCompanyId);
+      }
       return (error: 'Este veiculo nao pertence a sua empresa.', companyId: null);
     }
 
