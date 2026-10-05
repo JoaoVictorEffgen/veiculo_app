@@ -155,25 +155,14 @@ service cloud.firestore {
         && announcementIsActive(resource.data);
     }
 
-    function checklistWriteTenantOk() {
-      let vehicleId = request.resource.data.vehicleId;
-      let vehicleCo = get(/databases/$(database)/documents/vehicles/$(vehicleId)).data.get('companyId', 'default');
-      let requestCo = request.resource.data.get('companyId', 'default');
-      return requestCo == vehicleCo
-        && (
-          !exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          || requestCo == userCompanyId()
-        );
-    }
-
-    function isDriverChecklistCreate(checklistId) {
+    function isChecklistCreate(checklistId) {
       return isSignedIn()
         && request.resource.data.driverId == request.auth.uid
-        && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate
+        && request.resource.data.companyId is string
         && request.resource.data.checklistDate is string
         && request.resource.data.vehicleId is string
         && request.resource.data.items is map
-        && checklistWriteTenantOk();
+        && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate;
     }
 
     function isDriverChecklistUpdate(checklistId) {
@@ -267,19 +256,9 @@ service cloud.firestore {
       allow update, delete: if isAdmin() && sameCompanyResource();
     }
 
-    function isAdminOwnChecklistCreate(checklistId) {
-      return isAdmin()
-        && request.resource.data.driverId == request.auth.uid
-        && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate
-        && request.resource.data.checklistDate is string
-        && request.resource.data.vehicleId is string
-        && request.resource.data.items is map
-        && sameCompanyRequest();
-    }
-
     match /vehicle_checklists/{checklistId} {
       allow read: if canReadChecklist();
-      allow create: if isDriverChecklistCreate(checklistId) || isAdminOwnChecklistCreate(checklistId);
+      allow create: if isChecklistCreate(checklistId);
       allow update: if isAdmin() || isDriverChecklistUpdate(checklistId);
       allow delete: if isAdmin();
     }

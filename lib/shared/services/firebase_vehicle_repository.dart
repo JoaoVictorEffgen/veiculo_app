@@ -60,38 +60,41 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   Future<String?> _ensureVehicleInUserCompany(AppUser user, String vehicleId) async {
-    final resolved = await _resolveChecklistCompanyId(user.id, vehicleId);
-    return resolved.error;
+    final doc = await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).get();
+    if (!doc.exists) return 'Veiculo nao encontrado.';
+    if (_companyIdFromData(doc.data()) != user.companyId) {
+      return 'Este veiculo nao pertence a sua empresa.';
+    }
+    return null;
   }
 
-  /// [companyId] alinhado ao Firestore (users + veiculo) para passar nas regras de checklist.
-  Future<({String? error, String? companyId})> _resolveChecklistCompanyId(
-    String userId,
+  /// Perfil Firestore (fonte da verdade para companyId no checklist).
+  Future<({String? error, String? companyId})> _checklistWriteContext(
+    String authUid,
     String vehicleId,
   ) async {
-    final userSnap = await _firestore.collection(FirestorePaths.users).doc(userId).get();
+    final userSnap = await _firestore.collection(FirestorePaths.users).doc(authUid).get();
     if (!userSnap.exists) {
       return (error: 'Perfil nao encontrado. Saia e entre de novo.', companyId: null);
     }
-    final userCompanyId = _companyIdFromData(userSnap.data());
 
     final vehicleSnap = await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).get();
     if (!vehicleSnap.exists) {
       return (error: 'Veiculo nao encontrado.', companyId: null);
     }
-    final vehicleCompanyId = _companyIdFromData(vehicleSnap.data());
 
-    if (userCompanyId != vehicleCompanyId) {
-      final vehicleData = vehicleSnap.data();
-      final vehicleMissingTenant = vehicleData == null || !vehicleData.containsKey('companyId');
-      final isAdmin = userSnap.data()?['role'] == UserRole.admin.name;
-      if (vehicleMissingTenant && isAdmin) {
-        return (error: null, companyId: userCompanyId);
-      }
+    var companyId = _companyIdFromData(userSnap.data());
+    if (!userSnap.data()!.containsKey('companyId')) {
+      await userSnap.reference.set({'companyId': companyId}, SetOptions(merge: true));
+    }
+
+    final vehicleData = vehicleSnap.data()!;
+    final vehicleCompanyId = _companyIdFromData(vehicleData);
+    if (vehicleCompanyId != companyId && vehicleData.containsKey('companyId')) {
       return (error: 'Este veiculo nao pertence a sua empresa.', companyId: null);
     }
 
-    return (error: null, companyId: userCompanyId);
+    return (error: null, companyId: companyId);
   }
 
   @override
@@ -913,13 +916,14 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
     if (signatureBase64.trim().isEmpty) return 'Assine o checklist antes de concluir.';
 
-    final tenant = await _resolveChecklistCompanyId(driver.id, vehicle.id);
-    if (tenant.error != null) return tenant.error;
-    final writeCompanyId = tenant.companyId!;
+    final authUid = authUser.uid;
+    final ctx = await _checklistWriteContext(authUid, vehicle.id);
+    if (ctx.error != null) return ctx.error;
+    final writeCompanyId = ctx.companyId!;
 
     final today = DateTime.now();
     final checklistDate = checklistDateKey(today);
-    final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicle.id, date: today);
+    final docId = vehicleChecklistDocId(driverId: authUid, vehicleId: vehicle.id, date: today);
     final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
     final itemMap = {for (final item in VehicleChecklistConfig.items) item.id: items[item.id] == true};
     final trimmedSignature = signatureBase64.trim();
@@ -934,7 +938,7 @@ class FirebaseVehicleRepository implements VehicleRepository {
       }
 
       await docRef.set({
-        'driverId': driver.id,
+        'driverId': authUid,
         'driverName': driver.name,
         'companyId': writeCompanyId,
         'vehicleId': vehicle.id,
@@ -951,7 +955,10 @@ class FirebaseVehicleRepository implements VehicleRepository {
     } on FirebaseException catch (error) {
       switch (error.code) {
         case 'permission-denied':
-          return 'Sem permissao para salvar checklist. Saia e entre de novo ou fale com o administrador.';
+          return 'Sem permissao para salvar checklist (${error.code}). Atualize o app, saia e entre de novo.';
+        case 'invalid-argument':
+        case 'resource-exhausted':
+          return 'Checklist muito grande ou dados invalidos. Limpe a assinatura e tente de novo.';
         case 'already-exists':
           return 'Checklist deste veiculo ja foi feito hoje.';
         default:
