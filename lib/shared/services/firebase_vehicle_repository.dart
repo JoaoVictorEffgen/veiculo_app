@@ -890,42 +890,49 @@ class FirebaseVehicleRepository implements VehicleRepository {
     final vehicleCompanyError = await _ensureVehicleInUserCompany(driver, vehicle.id);
     if (vehicleCompanyError != null) return vehicleCompanyError;
 
-    final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicle.id);
+    final today = DateTime.now();
+    final checklistDate = checklistDateKey(today);
+    final docId = vehicleChecklistDocId(driverId: driver.id, vehicleId: vehicle.id, date: today);
     final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
     final itemMap = {for (final item in VehicleChecklistConfig.items) item.id: items[item.id] == true};
+    final trimmedSignature = signatureBase64.trim();
+    if (trimmedSignature.length > 900000) {
+      return 'Assinatura muito grande. Limpe e assine novamente de forma mais simples.';
+    }
 
     try {
-      await _firestore.runTransaction((transaction) async {
-        final existing = await transaction.get(docRef);
-        if (existing.exists) throw StateError('already-exists');
-        transaction.set(docRef, {
-          'driverId': driver.id,
-          'driverName': driver.name,
-          'companyId': driver.companyId,
-          'vehicleId': vehicle.id,
-          'vehicleName': vehicle.name,
-          'vehiclePlate': vehicle.plate,
-          'vehicleModel': vehicle.model,
-          'checklistDate': checklistDateKey(),
-          'items': itemMap,
-          if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
-          'signatureBase64': signatureBase64.trim(),
-          'completedAt': FieldValue.serverTimestamp(),
-        });
+      final existing = await docRef.get();
+      if (existing.exists) {
+        return 'Checklist deste veiculo ja foi feito hoje.';
+      }
+
+      await docRef.set({
+        'driverId': driver.id,
+        'driverName': driver.name,
+        'companyId': driver.companyId,
+        'vehicleId': vehicle.id,
+        'vehicleName': vehicle.name,
+        'vehiclePlate': vehicle.plate,
+        'vehicleModel': vehicle.model,
+        'checklistDate': checklistDate,
+        'items': itemMap,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        'signatureBase64': trimmedSignature,
+        'completedAt': FieldValue.serverTimestamp(),
       });
       return null;
-    } on StateError catch (error) {
-      if (error.message == 'already-exists') {
-        return 'Checklist deste veiculo ja foi feito hoje.';
-      }
-      rethrow;
     } on FirebaseException catch (error) {
-      if (error.code == 'already-exists') {
-        return 'Checklist deste veiculo ja foi feito hoje.';
+      switch (error.code) {
+        case 'permission-denied':
+          return 'Sem permissao para salvar checklist. Saia e entre de novo ou fale com o administrador.';
+        case 'already-exists':
+          return 'Checklist deste veiculo ja foi feito hoje.';
+        default:
+          return error.message ?? 'Erro ao salvar checklist.';
       }
-      return error.message ?? 'Erro ao salvar checklist.';
     } catch (error) {
-      return 'Erro ao salvar checklist: $error';
+      debugPrint('saveVehicleChecklist: $error');
+      return 'Erro ao salvar checklist. Verifique a internet e tente novamente.';
     }
   }
 

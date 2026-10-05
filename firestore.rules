@@ -158,11 +158,14 @@ service cloud.firestore {
     function isDriverChecklistCreate(checklistId) {
       return isSignedIn()
         && request.resource.data.driverId == request.auth.uid
-        && request.resource.data.get('companyId', 'default') == userCompanyId()
         && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate
         && request.resource.data.checklistDate is string
         && request.resource.data.vehicleId is string
-        && request.resource.data.items is map;
+        && request.resource.data.items is map
+        && (
+          !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          || request.resource.data.get('companyId', 'default') == userCompanyId()
+        );
     }
 
     function isDriverChecklistUpdate(checklistId) {
