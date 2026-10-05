@@ -60,25 +60,17 @@ class FirebaseVehicleRepository implements VehicleRepository {
   }
 
   Future<String?> _ensureVehicleInUserCompany(AppUser user, String vehicleId) async {
-    final doc = await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).get();
-    if (!doc.exists) return 'Veiculo nao encontrado.';
-    if (_companyIdFromData(doc.data()) != user.companyId) {
-      return 'Este veiculo nao pertence a sua empresa.';
-    }
-    return null;
-  }
-
-  /// companyId do perfil Firestore (nao le o veiculo — evita permission-denied em docs legados).
-  Future<({String? error, String? companyId})> _checklistWriteContext(String authUid) async {
     try {
-      final userSnap = await _firestore.collection(FirestorePaths.users).doc(authUid).get();
-      if (!userSnap.exists) {
-        return (error: 'Perfil nao encontrado. Saia e entre de novo.', companyId: null);
+      final doc = await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).get();
+      if (!doc.exists) return 'Veiculo nao encontrado.';
+      if (_companyIdFromData(doc.data()) != user.companyId) {
+        return 'Este veiculo nao pertence a sua empresa.';
       }
-      return (error: null, companyId: _companyIdFromData(userSnap.data()));
+      return null;
     } on FirebaseException catch (error) {
       if (error.code == 'permission-denied') {
-        return (error: 'Sem permissao para ler seu perfil. Saia e entre de novo.', companyId: null);
+        // Veiculo legado sem companyId ou lista ja filtrada por empresa no app.
+        return null;
       }
       rethrow;
     }
@@ -904,17 +896,16 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
     if (signatureBase64.trim().isEmpty) return 'Assine o checklist antes de concluir.';
 
-    final authUid = authUser.uid;
-    final ctx = await _checklistWriteContext(authUid);
-    if (ctx.error != null) return ctx.error;
-    final writeCompanyId = ctx.companyId!;
+    final vehicleCompanyError = await _ensureVehicleInUserCompany(driver, vehicle.id);
+    if (vehicleCompanyError != null) return vehicleCompanyError;
 
-    final today = DateTime.now();
-    final checklistDate = checklistDateKey(today);
-    final docId = vehicleChecklistDocId(driverId: authUid, vehicleId: vehicle.id, date: today);
-    if (docId != '${authUid}_${vehicle.id}_$checklistDate') {
-      return 'Erro interno ao montar ID do checklist. Tente novamente.';
+    await refreshCurrentUser();
+    final activeDriver = _cachedUser;
+    if (activeDriver == null || activeDriver.id != driver.id) {
+      return 'Sessao invalida. Faca login novamente.';
     }
+
+    final docId = vehicleChecklistDocId(driverId: activeDriver.id, vehicleId: vehicle.id);
     final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
     final itemMap = {for (final item in VehicleChecklistConfig.items) item.id: items[item.id] == true};
     final trimmedSignature = signatureBase64.trim();
@@ -924,19 +915,17 @@ class FirebaseVehicleRepository implements VehicleRepository {
 
     try {
       final existing = await docRef.get();
-      if (existing.exists) {
-        return null;
-      }
+      if (existing.exists) return null;
 
       await docRef.set({
-        'driverId': authUid,
-        'driverName': driver.name,
-        'companyId': writeCompanyId,
+        'driverId': activeDriver.id,
+        'driverName': activeDriver.name,
+        'companyId': activeDriver.companyId,
         'vehicleId': vehicle.id,
         'vehicleName': vehicle.name,
         'vehiclePlate': vehicle.plate,
         'vehicleModel': vehicle.model,
-        'checklistDate': checklistDate,
+        'checklistDate': checklistDateKey(),
         'items': itemMap,
         if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
         'signatureBase64': trimmedSignature,
@@ -944,17 +933,13 @@ class FirebaseVehicleRepository implements VehicleRepository {
       });
       return null;
     } on FirebaseException catch (error) {
-      switch (error.code) {
-        case 'permission-denied':
-          return 'Sem permissao para salvar checklist (${error.code}). Atualize o app, saia e entre de novo.';
-        case 'invalid-argument':
-        case 'resource-exhausted':
-          return 'Checklist muito grande ou dados invalidos. Limpe a assinatura e tente de novo.';
-        case 'already-exists':
-          return 'Checklist deste veiculo ja foi feito hoje.';
-        default:
-          return error.message ?? 'Erro ao salvar checklist.';
+      if (error.code == 'permission-denied') {
+        return 'Sem permissao para salvar checklist. Confira se o app esta atualizado, saia e entre de novo.';
       }
+      if (error.code == 'already-exists') {
+        return 'Checklist deste veiculo ja foi feito hoje.';
+      }
+      return error.message ?? 'Erro ao salvar checklist.';
     } catch (error) {
       debugPrint('saveVehicleChecklist: $error');
       return 'Erro ao salvar checklist. Verifique a internet e tente novamente.';

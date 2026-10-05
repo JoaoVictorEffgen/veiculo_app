@@ -155,14 +155,14 @@ service cloud.firestore {
         && announcementIsActive(resource.data);
     }
 
-    function isChecklistCreate(checklistId) {
+    function isDriverChecklistCreate(checklistId) {
       return isSignedIn()
         && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.get('companyId', 'default') == userCompanyId()
+        && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate
         && request.resource.data.checklistDate is string
         && request.resource.data.vehicleId is string
-        && request.resource.data.items is map
-        && request.resource.data.get('companyId', 'default') is string
-        && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate;
+        && request.resource.data.items is map;
     }
 
     function isDriverChecklistUpdate(checklistId) {
@@ -172,9 +172,10 @@ service cloud.firestore {
         && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate;
     }
 
-    function canReadChecklist() {
+    function canReadChecklist(checklistId) {
       return (isAdmin() && sameCompanyResource())
-        || (isSignedIn() && resource.data.driverId == request.auth.uid);
+        || (isSignedIn() && resource.data.driverId == request.auth.uid && sameCompanyResource())
+        || (isSignedIn() && checklistId.matches('^' + request.auth.uid + '_.*'));
     }
 
     function isRegisteringCompanyAdmin(userId) {
@@ -260,8 +261,8 @@ service cloud.firestore {
     }
 
     match /vehicle_checklists/{checklistId} {
-      allow read: if canReadChecklist();
-      allow create: if isChecklistCreate(checklistId);
+      allow read: if canReadChecklist(checklistId);
+      allow create: if isDriverChecklistCreate(checklistId);
       allow update: if isAdmin() || isDriverChecklistUpdate(checklistId);
       allow delete: if isAdmin();
     }
