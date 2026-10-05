@@ -68,29 +68,20 @@ class FirebaseVehicleRepository implements VehicleRepository {
     return null;
   }
 
-  /// Perfil Firestore (fonte da verdade para companyId no checklist).
-  Future<({String? error, String? companyId})> _checklistWriteContext(
-    String authUid,
-    String vehicleId,
-  ) async {
-    final userSnap = await _firestore.collection(FirestorePaths.users).doc(authUid).get();
-    if (!userSnap.exists) {
-      return (error: 'Perfil nao encontrado. Saia e entre de novo.', companyId: null);
+  /// companyId do perfil Firestore (nao le o veiculo — evita permission-denied em docs legados).
+  Future<({String? error, String? companyId})> _checklistWriteContext(String authUid) async {
+    try {
+      final userSnap = await _firestore.collection(FirestorePaths.users).doc(authUid).get();
+      if (!userSnap.exists) {
+        return (error: 'Perfil nao encontrado. Saia e entre de novo.', companyId: null);
+      }
+      return (error: null, companyId: _companyIdFromData(userSnap.data()));
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') {
+        return (error: 'Sem permissao para ler seu perfil. Saia e entre de novo.', companyId: null);
+      }
+      rethrow;
     }
-
-    final vehicleSnap = await _firestore.collection(FirestorePaths.vehicles).doc(vehicleId).get();
-    if (!vehicleSnap.exists) {
-      return (error: 'Veiculo nao encontrado.', companyId: null);
-    }
-
-    final companyId = _companyIdFromData(userSnap.data());
-    final vehicleData = vehicleSnap.data()!;
-    final vehicleCompanyId = _companyIdFromData(vehicleData);
-    if (vehicleCompanyId != companyId && vehicleData.containsKey('companyId')) {
-      return (error: 'Este veiculo nao pertence a sua empresa.', companyId: null);
-    }
-
-    return (error: null, companyId: companyId);
   }
 
   @override
@@ -914,13 +905,16 @@ class FirebaseVehicleRepository implements VehicleRepository {
     if (signatureBase64.trim().isEmpty) return 'Assine o checklist antes de concluir.';
 
     final authUid = authUser.uid;
-    final ctx = await _checklistWriteContext(authUid, vehicle.id);
+    final ctx = await _checklistWriteContext(authUid);
     if (ctx.error != null) return ctx.error;
     final writeCompanyId = ctx.companyId!;
 
     final today = DateTime.now();
     final checklistDate = checklistDateKey(today);
     final docId = vehicleChecklistDocId(driverId: authUid, vehicleId: vehicle.id, date: today);
+    if (docId != '${authUid}_${vehicle.id}_$checklistDate') {
+      return 'Erro interno ao montar ID do checklist. Tente novamente.';
+    }
     final docRef = _firestore.collection(FirestorePaths.vehicleChecklists).doc(docId);
     final itemMap = {for (final item in VehicleChecklistConfig.items) item.id: items[item.id] == true};
     final trimmedSignature = signatureBase64.trim();

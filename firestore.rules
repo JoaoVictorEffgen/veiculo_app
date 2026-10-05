@@ -158,10 +158,10 @@ service cloud.firestore {
     function isChecklistCreate(checklistId) {
       return isSignedIn()
         && request.resource.data.driverId == request.auth.uid
-        && request.resource.data.companyId is string
         && request.resource.data.checklistDate is string
         && request.resource.data.vehicleId is string
         && request.resource.data.items is map
+        && request.resource.data.get('companyId', 'default') is string
         && checklistId == request.auth.uid + '_' + request.resource.data.vehicleId + '_' + request.resource.data.checklistDate;
     }
 
@@ -210,7 +210,10 @@ service cloud.firestore {
     }
 
     match /vehicles/{vehicleId} {
-      allow read: if isSignedIn() && sameCompanyResource();
+      allow read: if isSignedIn() && (
+        sameCompanyResource()
+        || (!('companyId' in resource.data) && userCompanyId() == 'default')
+      );
       allow create, delete: if isAdmin() && sameCompanyRequest();
       allow update: if (isAdmin() && sameCompanyResource() && sameCompanyRequest()) || canOperateVehicle();
 
